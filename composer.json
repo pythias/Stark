@@ -1,0 +1,21 @@
+{
+    "name": "pythias/Stark",
+    "description": "A message queue-based PHP daemon",
+    "keywords": ["daemon", "PHP", "queue"],
+    "homepage": "https://github.com/pythias/Stark",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": ">=5.3",
+        "ext-pcntl": "*"
+    },
+    "autoload": {
+        "psr-0": {"Stark": "src"}
+    },
+    "authors": [
+        {
+            "name" : "Chenjie",
+            "email": "pythias@gmail.com"
+        }
+    ]
+}
