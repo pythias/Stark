@@ -22,8 +22,11 @@ class Options {
             }
 
             $property = "_{$key}";
-            if (isset($this->$property) == false) throw new \Stark\Daemon\Exception\Options("Set option failed, option:{$key}");
-            $this->$property = $value; //TODO:value type
+            if (isset($this->$property) == false) {
+                throw new \Stark\Daemon\Exception\Options("Set option failed, option:{$key}");
+            }
+            
+            $this->$property = $value;
         }
 
         return true;

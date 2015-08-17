@@ -54,25 +54,56 @@ function get_options($file) {
 
     include_run_file(dirname($file), get_option_value($config, 'run.script_file'));
 
-    return array(
-        'consumer' => array(
-            'class' => '\\Stark\\Daemon\\Consumer\\Callback',
-            'options' => array(
-                'init' => 'init',
-                'run' => 'run',
-                'complete' => 'complete',
-            ),
+    $options = array();
+    set_master_options($options, $config);
+    set_consumer_options($options, $config);
+    set_queue_options($options, $config);
+
+    return $options;
+}
+
+function set_master_options(&$options, $config) {
+    $options['master'] = array(
+        'name' => get_option_value($config, 'main.name', 'Stark_' . time()),
+        'host' => get_option_value($config, 'main.host', '127.0.0.1'),
+        'port' => get_option_value($config, 'main.port', 9003),
+        'maxWorkerCount' => get_option_value($config, 'worker.count', 1),
+        'maxRunCount' => get_option_value($config, 'worker.max_run_count', 10000),
+        'maxRunSeconds' => get_option_value($config, 'worker.max_run_seconds', 3600),
+        'maxIdleSeconds' => get_option_value($config, 'worker.max_idle_seconds', 60),
+        'maxIdleSeconds' => get_option_value($config, 'worker.max_idle_seconds', 60),
+        'memoryLimit' => get_option_value($config, 'run.memory_limit', '1024M'),
+    );
+}
+
+function set_consumer_options(&$options, $config) {
+    $options['consumer'] => array(
+        'class' => '\\Stark\\Daemon\\Consumer\\Callback',
+        'options' => array(
+            'init' => 'init',
+            'run' => 'run',
+            'complete' => 'complete',
         ),
-        'master' => array(
-            'name' => get_option_value($config, 'main.name', 'Stark_' . time()),
-            'host' => get_option_value($config, 'main.host', '127.0.0.1'),
-            'port' => get_option_value($config, 'main.port', 9003),
-            'maxWorkerCount' => get_option_value($config, 'worker.count', 1),
-            'maxRunCount' => get_option_value($config, 'worker.max_run_count', 10000),
-            'maxRunSeconds' => get_option_value($config, 'worker.max_run_seconds', 3600),
-            'maxIdleSeconds' => get_option_value($config, 'worker.max_idle_seconds', 60),
-            'maxIdleSeconds' => get_option_value($config, 'worker.max_idle_seconds', 60),
-            'memoryLimit' => get_option_value($config, 'run.memory_limit', '1024M'),
+    );
+}
+
+function set_queue_options(&$options, $config) {
+    if (isset($config['queue']['type']) == false) {
+        return;
+    }
+
+    $type = $config['queue']['type'];
+    call_user_func_array("set_queue_{$type}_options", array($options, $config));
+}
+
+function set_queue_redis_options(&$options, $config) {
+    $options['Queue'] = array(
+        'class' => '\\Stark\\Daemon\\Queue\\Redis',
+        'options' => array(
+            'host' => get_option_value($config, 'queue.host', '127.0.0.1'),
+            'port' => get_option_value($config, 'queue.port', 6379),
+            'key' => get_option_value($config, 'queue.key', 'stark_queue'),
+            'timeout' => get_option_value($config, 'queue.timeout', 2.0),
         ),
     );
 }
