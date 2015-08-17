@@ -77,7 +77,7 @@ function set_master_options(&$options, $config) {
 }
 
 function set_consumer_options(&$options, $config) {
-    $options['consumer'] => array(
+    $options['consumer'] = array(
         'class' => '\\Stark\\Daemon\\Consumer\\Callback',
         'options' => array(
             'init' => 'init',
@@ -85,15 +85,6 @@ function set_consumer_options(&$options, $config) {
             'complete' => 'complete',
         ),
     );
-}
-
-function set_queue_options(&$options, $config) {
-    if (isset($config['queue']['type']) == false) {
-        return;
-    }
-
-    $type = $config['queue']['type'];
-    call_user_func_array("set_queue_{$type}_options", array($options, $config));
 }
 
 function set_queue_redis_options(&$options, $config) {
@@ -106,6 +97,14 @@ function set_queue_redis_options(&$options, $config) {
             'timeout' => get_option_value($config, 'queue.timeout', 2.0),
         ),
     );
+}
+
+function set_queue_options(&$options, $config) {
+    $type = get_option_value($config, 'queue.type', '');
+    $function = "set_queue_{$type}_options";
+    if (function_exists($function)) {
+        call_user_func_array($function, array(&$options, $config));
+    }
 }
 
 function get_option_value($config, $key, $default = false) {

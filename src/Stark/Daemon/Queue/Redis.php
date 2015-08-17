@@ -9,7 +9,7 @@ class Redis extends Base {
     private $_redis = false;
 
     public function init(\Stark\Daemon\Worker $worker) {
-        $this->_redis = new Redis();
+        $this->_redis = new \Redis();
         $this->_redis->connect($this->_host, $this->_port, $this->_timeout);
     }
 

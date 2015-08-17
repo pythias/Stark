@@ -8,7 +8,8 @@ Requires
 
 * PHP 5.3 or Higher
 * A POSIX compatible operating system (Linux, OSX, BSD)
-* POSIX and PCNTL Extensions for PHP
+* POSIX and PCNTL extensions for PHP
+* Redis extensions 
 
 Features
 --------
