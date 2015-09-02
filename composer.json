@@ -1,5 +1,5 @@
 {
-    "name": "pythias/Stark",
+    "name": "stark/stark",
     "description": "A message queue-based PHP daemon",
     "keywords": ["daemon", "PHP", "queue"],
     "homepage": "https://github.com/pythias/Stark",
