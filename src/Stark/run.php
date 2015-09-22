@@ -71,7 +71,7 @@ function set_master_options(&$options, $config) {
         'maxRunCount' => get_option_value($config, 'worker.max_run_count', 10000),
         'maxRunSeconds' => get_option_value($config, 'worker.max_run_seconds', 3600),
         'maxIdleSeconds' => get_option_value($config, 'worker.max_idle_seconds', 60),
-        'maxIdleSeconds' => get_option_value($config, 'worker.max_idle_seconds', 60),
+        'emptySleepSeconds' => get_option_value($config, 'worker.empty_sleep_seconds', 0.1),
         'memoryLimit' => get_option_value($config, 'run.memory_limit', '1024M'),
     );
 }

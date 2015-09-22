@@ -31,6 +31,7 @@ class Worker {
     public $maxRunSeconds = 0;
     public $maxRunCount = 0;
     public $maxIdleSeconds = 60;
+    public $emptySleepSeconds = 0.1;
     public $heartbeat = 2.0;
     public $consumer = null;
     public $queue = null;
@@ -73,12 +74,12 @@ class Worker {
             $this->_receiveCommands();
 
             if ($this->_pause) {
-                usleep(1000);
+                usleep($this->emptySleepSeconds * 1000000);
                 continue;
             }
 
             if ($this->_doQueue() === false) {
-                usleep(1000);
+                usleep($this->emptySleepSeconds * 1000000);
             }
         }
     }

@@ -39,6 +39,7 @@ Daemon configuration
 * worker.max_run_count : The maximum number of runs, after the number reached the worker will restart every time.
 * worker.max_run_seconds : An integer value in seconds, specifying the maximum time the worker will restart after the time arrives.
 * worker.max_idle_seconds : An integer value in seconds, specifying the longest idle time, the worker will restart after the time arrives.
+* worker.empty_sleep_seconds : An float value in seconds, specifying the sleep time when the worker cannt get data.
 
 An example configuration ini file:
 ```ini
@@ -57,6 +58,7 @@ count = 3
 max_run_count = 10000
 max_run_seconds = 3600
 max_idle_seconds = 60
+empty_sleep_seconds = 0.1
 ```
 
 An example callback file:
