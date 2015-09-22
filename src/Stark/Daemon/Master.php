@@ -19,6 +19,7 @@ class Master extends \Stark\Core\Options {
     protected $_maxRunCount = 0;
     protected $_maxRunSeconds = 0;
     protected $_maxIdleSeconds = 0;
+    protected $_emptySleepSeconds = 0;
     protected $_memoryLimit = '1024M';
 
     /*Daemon*/
@@ -154,6 +155,7 @@ class Master extends \Stark\Core\Options {
         $this->_worker->maxRunCount = $this->_maxRunCount;
         $this->_worker->maxRunSeconds = $this->_maxRunSeconds;
         $this->_worker->maxIdleSeconds = $this->_maxIdleSeconds;
+        $this->_worker->emptySleepSeconds = $this->_emptySleepSeconds;
     }
 
     private function _startWorkers() {
