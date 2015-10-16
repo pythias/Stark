@@ -33,6 +33,10 @@ class System {
         return $data;
     }
 
+    public static function getProcNumber() {
+        return shell_exec("nproc");
+    }
+
     public static function setAffinity($pid, $mask = '1-32') {
         return shell_exec("taskset -cp {$mask} {$pid}");
     }

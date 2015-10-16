@@ -154,17 +154,12 @@ class Worker {
     }
     
     private function _getStatus() {
-        $cpuData = posix_times();
-        
         return array(
             'lastActiveTime' => $this->_lastActiveTime,
             'totalCount' => $this->_totalCount,
             'totalTime' => $this->_totalTime,
             'totalQPS' => $this->_totalQPS,
             'memory' => memory_get_peak_usage(true),
-            'ticks' => $cpuData['ticks'],
-            'cpuU' => $cpuData['utime'],
-            'cpuS' => $cpuData['stime'],
         );
     }
     
@@ -179,7 +174,7 @@ class Worker {
             }
         }
 
-        $this->consumer->run($this, $data);
+        $runResult = $this->consumer->run($this, $data);
 
         $queueEndTime = microtime(true);
         $this->_lastActiveTime = $queueBeginTime;
@@ -190,7 +185,7 @@ class Worker {
         $this->_totalTime += $queueEndTime - $queueBeginTime;
         $this->_totalQPS = $this->_totalCount / $this->_totalTime;
         
-        return true;
+        return $runResult;
     }
 
     private function _connectMasterSocket() {

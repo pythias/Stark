@@ -196,9 +196,6 @@ class Master extends \Stark\Core\Options {
             \Stark\Core\System::setAffinity($pid, '2-32');
             \Stark\Core\System::setProcTitle($pid, "daemon '{$this->_name}' worker {$index}");
 
-            $this->workerStatuses[$index]->totalCpuU += $this->workerStatuses[$index]->cpuU;
-            $this->workerStatuses[$index]->totalCpuS += $this->workerStatuses[$index]->cpuS;
-
             $this->_worker->pid = $pid; 
             $this->_worker->index = $index;
             $this->_worker->start();
@@ -521,15 +518,11 @@ class Master extends \Stark\Core\Options {
         $totalTime = 0.0;
         $totalQPS = 0.0;
         $totalMemory = 0;
-        $totalCpuU = 0;
-        $totalCpuS = 0;
                                 
         foreach ($this->workerStatuses as $childInfo) {
             $totalCount += $childInfo->totalCount;
             $totalTime += $childInfo->totalTime;
             $totalMemory += $childInfo->memory;
-            $totalCpuU += $childInfo->cpuU + $childInfo->totalCpuU;
-            $totalCpuS += $childInfo->cpuS + $childInfo->totalCpuS;
         }
         
         $totalQPS = $totalTime ? $totalCount / $totalTime : 0;
@@ -544,8 +537,6 @@ class Master extends \Stark\Core\Options {
             'total_time' => $totalTime,
             'total_qps' => $totalQPS,
             'total_memory' => $totalMemory,
-            'total_cpu_u' => $totalCpuU,
-            'total_cpu_s' => $totalCpuS,
             'total_worker_client' => count($this->_workerClients),
             'total_manage_client' => count($this->_adminClients),
         );
