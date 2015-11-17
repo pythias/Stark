@@ -7,13 +7,26 @@ class Redis extends Base {
     protected $_timeout = 2.0;
     protected $_key = 'stark';
     private $_redis = false;
+    private $_prioritySupported = false;
 
     public function init(\Stark\Daemon\Worker $worker) {
         $this->_redis = new \Redis();
         $this->_redis->connect($this->_host, $this->_port, $this->_timeout);
+
+        //支持优先级
+        $keys = explode(' ', trim($this->_key));
+        if (count($keys) > 1) {
+            $this->_key = $keys;
+            $this->_prioritySupported = true;
+        }
     }
 
     public function pop(\Stark\Daemon\Worker $worker) {
+        if ($this->_prioritySupported) {
+            $value = $this->_redis->blPop($this->_key, 1);
+            return isset($value[1]) ? $value[1] : false;
+        }
+
         return $this->_redis->lPop($this->_key);
     }
 

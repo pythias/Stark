@@ -31,7 +31,7 @@ function exit_by_error($error) {
 
 function include_run_file($dir, $run_file) {
     if (file_exists($run_file) == false) {
-        $run_file = "./" . $dir . "/" . $run_file;
+        $run_file = "{$dir}/{$run_file}";
     }
 
     if (file_exists($run_file) == false) {

@@ -1,7 +1,7 @@
 <?php
 
 function run($worker, $data) {
-    if (empty($data)) {
+    if ($data === false) {
         return false;
     }
 

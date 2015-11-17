@@ -35,6 +35,9 @@ class Worker {
     public $heartbeat = 2.0;
     public $consumer = null;
     public $queue = null;
+
+    //系统参数
+    public $config = array();
     
     public function start() {
         $this->_initialize();
@@ -63,7 +66,7 @@ class Worker {
         $this->_masterLastActiveTime = 0;
 
         $this->_started = true;
-        $this->log->log("Worker {$this->index} is started");
+        $this->log->addInfo("Worker {$this->index} is started");
     }
 
     private function _startLoop() {
@@ -93,7 +96,7 @@ class Worker {
         
         $this->consumer->complete($this);
 
-        $this->log->log("Worker {$this->index} is completed");
+        $this->log->addInfo("Worker {$this->index} is completed");
     }
 
     private function _setupSignal() {
@@ -141,7 +144,7 @@ class Worker {
 
     private function _restart($reason = false) {
         if ($reason != false) {
-            $this->log->log("No.{$this->index} worker restart: {$reason}");
+            $this->log->addInfo("No.{$this->index} worker restart: {$reason}");
         }
 
         $this->_sendResponse('restart', $reason);
@@ -165,7 +168,7 @@ class Worker {
     
     private function _doQueue() {
         $queueBeginTime = microtime(true);
-        $data = NULL;
+        $data = null;
 
         if ($this->queue) {
             $data = $this->queue->pop($this);
@@ -210,8 +213,8 @@ class Worker {
         socket_getsockname($this->_daemonSocket, $ip, $this->_socketPort);
     }
 
-    private function _exit($message, $level = \Stark\Core\Log\Level::ERROR) {
-        $this->log->log($message, $level);
+    private function _exit($message) {
+        $this->log->addInfo($message);
         
         if ($this->_started) {
             $this->_finalize();
@@ -249,18 +252,18 @@ class Worker {
     }
 
     private function _quitCommandHandle($arguments = array()) {
-        $this->_restart('Worker {$this->index} received command: quit');
+        $this->_restart("Worker {$this->index} received command: quit");
         return true;
     }
 
     private function _restartCommandHandle($arguments = array()) {
-        $this->_restart('Worker {$this->index} received command: restart');
+        $this->_restart("Worker {$this->index} received command: restart");
         return true;
     }
 
     private function _pauseCommandHandle($arguments = array()) {
         if ($this->_pause) {
-            $this->log->log("Worker {$this->index} received command: pause");
+            $this->log->addInfo("Worker {$this->index} received command: pause");
             $this->_pause = true;
         }
 
@@ -269,7 +272,7 @@ class Worker {
 
     private function _resumeCommandHandle($arguments = array()) {
         if ($this->_pause) {
-            $this->log->log("Worker {$this->index} received command: resume");
+            $this->log->addInfo("Worker {$this->index} received command: resume");
             $this->_pause = false;
         }
 
@@ -290,7 +293,7 @@ class Worker {
             $errorCode = socket_last_error($this->_daemonSocket);
             
             if ($errorCode === SOCKET_EPIPE || $errorCode === SOCKET_EAGAIN) {
-                $this->log->log("Worker {$this->index} socket error, reconnecting");
+                $this->log->addInfo("Worker {$this->index} socket error, reconnecting");
                 $this->_connectMasterSocket();                    
             }
         }

@@ -16,5 +16,9 @@ php src/Stark/run.php -f tests/simple_callback/config_2.ini
 
 ### 3.With redis queue
 ```
-php src/Stark/run.php -f tests/queue_redis/config_redis.ini
+# Normal MQ
+php src/Stark/run.php -f tests/queue_redis/redis.ini
+
+# With priority
+php src/Stark/run.php -f tests/queue_redis/redis_with_priority.ini
 ```

@@ -7,10 +7,11 @@
     "license": "MIT",
     "require": {
         "php": ">=5.3",
+        "monolog/monolog": "*",
         "ext-pcntl": "*"
     },
     "autoload": {
-        "psr-0": {"Stark": "src"}
+        "psr-4": {"Stark\\": "src/Stark"}
     },
     "authors": [
         {

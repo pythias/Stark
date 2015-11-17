@@ -1,6 +1,9 @@
 <?php
 namespace Stark\Daemon;
 
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
 class Master extends \Stark\Core\Options {
     private $_pid;
     private $_pidFile;
@@ -13,7 +16,7 @@ class Master extends \Stark\Core\Options {
     protected $_name = 'daemon';
     protected $_host = '127.0.0.1';
     protected $_port = '1980';
-    protected $_workingDirectory = '/tmp/';
+    protected $_workingDirectory = '/tmp';
     protected $_heartbeat = 2.0;
     protected $_maxWorkerCount = 1;
     protected $_maxRunCount = 0;
@@ -21,6 +24,8 @@ class Master extends \Stark\Core\Options {
     protected $_maxIdleSeconds = 0;
     protected $_emptySleepSeconds = 0;
     protected $_memoryLimit = '1024M';
+    protected $_config = array();
+    protected $_logLevel = Logger::INFO;
 
     /*Daemon*/
     private $_daemonSocketFile;
@@ -46,7 +51,7 @@ class Master extends \Stark\Core\Options {
     
     public function start() {
         ini_set('memory_limit', $this->_memoryLimit);
-        $this->_checkEnviroments();
+
         $this->_initialize();
 
         $this->_daemonIsRunning();
@@ -69,28 +74,26 @@ class Master extends \Stark\Core\Options {
         $this->_startLoop();
     }
 
-    private function _checkEnviroments() {
-        //PHP版本
-        if (phpversion() < 5.3) {
-            $this->_exit("PHP version require 5.3+");
-        }
-
-        //pcntl扩展
-        if (function_exists('pcntl_fork') === false) {
-            $this->_exit("'pcntl' extension is required");
-        }
-    }
-
     private function _initialize() {
         $this->_initializeWorkingDirectory();
+        $this->_initializeLog();
         $this->_initializeFiles();
         $this->_checkParameters();
     }
 
+    private function _initializeLog() {
+        $logFile = "{$this->_workingDirectory}/logs/{$this->_name}-" . date('Y-m-d') . ".log";
+
+        $this->_log = new Logger($this->_name);
+        $this->_log->pushHandler(new StreamHandler($logFile, $this->_logLevel));
+    }
+
     private function _initializeWorkingDirectory() {
         if (empty($this->_workingDirectory)) {
-            $this->_workingDirectory = '/tmp/';
+            $this->_workingDirectory = '/tmp';
         }
+
+        $this->_workingDirectory = rtrim($this->_workingDirectory, '/');
 
         if (is_dir($this->_workingDirectory) == false) {
             if (mkdir($this->_workingDirectory, 0, true) == false) {
@@ -113,10 +116,6 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _checkParameters() {
-        if ($this->_log == null) {
-            $this->_log = new \Stark\Core\Log\Console();    
-        }
-
         if ($this->_consumer == null) {
             $this->_exit("Cannt run daemon without callback");
         }
@@ -156,6 +155,7 @@ class Master extends \Stark\Core\Options {
         $this->_worker->maxRunSeconds = $this->_maxRunSeconds;
         $this->_worker->maxIdleSeconds = $this->_maxIdleSeconds;
         $this->_worker->emptySleepSeconds = $this->_emptySleepSeconds;
+        $this->_worker->config = $this->_config;
     }
 
     private function _startWorkers() {
@@ -165,7 +165,7 @@ class Master extends \Stark\Core\Options {
     }
     
     private function _createWorker($index) {
-        echo "Start worker {$index}\r\n";
+        $this->_log->addInfo("Worker {$index} started");
         $currentMicroTime = microtime(true);
 
         if (isset($this->workerStatuses[$index]) == false) {
@@ -173,7 +173,7 @@ class Master extends \Stark\Core\Options {
         }
 
         if (($currentMicroTime - $this->workerStatuses[$index]->startTime) < self::WORKER_START_INTERVAL_SECONDES) {
-            $this->_log->log("Worker {$index} cannt start right now", \Stark\Core\Log\Level::ERROR);
+            $this->_log->addError("Worker {$index} cannt start right now");
             return false;
         }
         
@@ -211,7 +211,11 @@ class Master extends \Stark\Core\Options {
         pcntl_signal(SIGHUP, array($this, '_quit'));
     }
 
-    private function _exit($message, $level = \Stark\Core\Log\Level::ERROR) {
+    private function _exit($message) {
+        if ($this->_log) {
+            $this->_log->addInfo($message);
+        }
+
         exit("{$message}\r\n");
     }
 
@@ -266,7 +270,7 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _quit() {
-        $this->_log->log("Ending daemon: {$this->_name}", \Stark\Core\Log\Level::INFO);
+        $this->_log->addInfo("Ending daemon: {$this->_name}");
 
         foreach ($this->_workerClients as $processClient) {
             $this->_sendCommandToWorker($processClient['client'], 'quit');
@@ -291,7 +295,7 @@ class Master extends \Stark\Core\Options {
     }
     
     private function _startLoop() {
-        $this->_log->log("Starting daemon: {$this->_name}", \Stark\Core\Log\Level::INFO);
+        $this->_log->addInfo("Starting daemon: {$this->_name}");
 
         $time = microtime(true);
         $lastWorkerTime = $time;
@@ -362,7 +366,7 @@ class Master extends \Stark\Core\Options {
             $queueDaemonStatus = \Stark\Core\System::getStatus($worker->pid);
 
             if ($queueDaemonStatus === false || intval($queueDaemonStatus['PPid']) != $this->_pid) {
-                $this->_log->log("Worker {$index} is gone", \Stark\Core\Log\Level::ERROR);
+                $this->_log->addError("Worker {$index} is gone");
                 $missingWorkerList[] = $index;
             }
         }
@@ -453,7 +457,7 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _restartWorkerHandler($client, $arguments = array()) {
-        $this->_log->log("Restarting worker {$arguments[self::WORKER_PAYLOAD_INDEX]}");
+        $this->_log->addInfo("Restarting worker {$arguments[self::WORKER_PAYLOAD_INDEX]}");
 
         $workerIndex = $arguments[self::WORKER_PAYLOAD_INDEX];
 
@@ -483,7 +487,7 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _shutdownAdminHandler($client, $arguments = array(), $from = 0, $commandId = 0) {
-        $this->_log->log('Received command: shutdown');
+        $this->_log->addInfo('Received command: shutdown');
         $this->_sendResponseToManager($client, 'OK');
         $this->_quit();
 

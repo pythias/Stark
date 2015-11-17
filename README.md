@@ -15,6 +15,7 @@ Features
 --------
 
 * Simple Callbacks
+* Message Queue Processing
 * Daemon Monitoring
 * Automatic Restart
 
@@ -40,6 +41,11 @@ Daemon configuration
 * worker.max_run_seconds : An integer value in seconds, specifying the maximum time the worker will restart after the time arrives.
 * worker.max_idle_seconds : An integer value in seconds, specifying the longest idle time, the worker will restart after the time arrives.
 * worker.empty_sleep_seconds : An float value in seconds, specifying the sleep time when the worker cannt get data.
+* MQ Support
+    - queue.type : Queue service type, includes "Redis"
+    - queue.host : Queue service ip address
+    - queue.port : Queue service bind port
+    - queue.key : The key of queue in service, you can use multiple keys separated by commas to supporting priority MQ.
 
 An example configuration ini file:
 ```ini
