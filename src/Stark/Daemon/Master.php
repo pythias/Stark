@@ -96,7 +96,7 @@ class Master extends \Stark\Core\Options {
         $this->_workingDirectory = rtrim($this->_workingDirectory, '/');
 
         if (is_dir($this->_workingDirectory) == false) {
-            if (mkdir($this->_workingDirectory, 0, true) == false) {
+            if (mkdir($this->_workingDirectory, 0777, true) == false) {
                 $this->_exit("Unable to create working directory: {$this->_workingDirectory}");
             }
         }
@@ -107,8 +107,8 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _initializeFiles() {
-        $this->_pidFile = $this->_workingDirectory . $this->_name . '.pid';
-        $this->_daemonSocketFile = $this->_workingDirectory . $this->_name . '.sock';
+        $this->_pidFile = "{$this->_workingDirectory}/{$this->_name}.pid";
+        $this->_daemonSocketFile = "{$this->_workingDirectory}/{$this->_name}.sock";
         
         if (strlen($this->_daemonSocketFile) > self::UNIX_PATH_MAX) {
             $this->_exit("Socket path {$this->_daemonSocketFile} is too long");
@@ -130,13 +130,12 @@ class Master extends \Stark\Core\Options {
         if ($queueDaemonStatus === false) {
             unlink($this->_pidFile);
         } else {
-            //TODO 判断是否为当前Daemon
+            //TODO: 判断是否为当前Daemon
             $this->_exit("Daemon '{$this->_name}' is already running", \Stark\Core\Log\Level::INFO);
         }
     }
 
     private function _createPidFile() {
-        $this->_pidFile = $this->_workingDirectory . $this->_name . '.pid';
         if (file_put_contents($this->_pidFile, $this->_pid) == false) {
             $this->_exit("Unable to write pid file '{$this->_pidFile}'");
         }
