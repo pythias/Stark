@@ -18,3 +18,7 @@
 .tmproj
 nbproject
 Thumbs.db
+
+# Composer
+composer.lock
+vendor
