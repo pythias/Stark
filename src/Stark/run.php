@@ -93,7 +93,7 @@ function set_consumer_options(&$options, $config) {
 }
 
 function set_queue_redis_options(&$options, $config) {
-    $options['Queue'] = array(
+    $options['queue'] = array(
         'class' => '\\Stark\\Daemon\\Queue\\Redis',
         'options' => array(
             'host' => get_option_value($config, 'queue.host', '127.0.0.1'),
@@ -105,7 +105,7 @@ function set_queue_redis_options(&$options, $config) {
 }
 
 function set_queue_options(&$options, $config) {
-    $type = get_option_value($config, 'queue.type', '');
+    $type = get_option_value($config, 'queue.type', 'redis');
     $function = "set_queue_{$type}_options";
     if (function_exists($function)) {
         call_user_func_array($function, array(&$options, $config));

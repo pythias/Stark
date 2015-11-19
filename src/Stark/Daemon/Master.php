@@ -131,7 +131,7 @@ class Master extends \Stark\Core\Options {
             unlink($this->_pidFile);
         } else {
             //TODO: 判断是否为当前Daemon
-            $this->_exit("Daemon '{$this->_name}' is already running", \Stark\Core\Log\Level::INFO);
+            $this->_exit("Daemon '{$this->_name}' is already running");
         }
     }
 
