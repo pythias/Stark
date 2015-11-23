@@ -105,7 +105,7 @@ function set_queue_redis_options(&$options, $config) {
 }
 
 function set_queue_options(&$options, $config) {
-    $type = get_option_value($config, 'queue.type', 'redis');
+    $type = get_option_value($config, 'queue.type', '');
     $function = "set_queue_{$type}_options";
     if (function_exists($function)) {
         call_user_func_array($function, array(&$options, $config));
