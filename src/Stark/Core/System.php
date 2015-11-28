@@ -59,7 +59,7 @@ class System {
             }
         }
 
-        $checkDeviceCommand = "(ifconfig {$device} 1> /dev/null 2>&1 || (echo false && exit 1))";
+        $checkDeviceCommand = "(ifconfig {$device} >> /dev/null 2>&1 || (echo false && exit 1))";
         $awkCommand = 'awk \'/inet / {ipstr = $0;gsub("addr:", "", ipstr);split(ipstr, ip, " ");print ip[2]}\'';
         $ip = trim(shell_exec("{$checkDeviceCommand} && (ifconfig {$device} | {$awkCommand})"));
 
@@ -71,5 +71,3 @@ class System {
         return '0.0.0.0';
     }
 }
-
-echo System::getLocalIp();
