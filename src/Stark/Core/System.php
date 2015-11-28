@@ -47,7 +47,6 @@ class System {
     public static function getLocalIp($device = '') {
         $osType = ucfirst(strtolower(php_uname('s')));
 
-        $awkCommand = 'awk \'/inet / {ipstr = $0;gsub("addr:", "", ipstr);split(ipstr, ip, " ");print ip[2]}\'';
 
         if (!$device)
         {
@@ -60,9 +59,11 @@ class System {
             }
         }
 
-        $ip = trim(shell_exec("ifconfig {$device} | " . $awkCommand));
+        $checkDeviceCommand = "(ifconfig {$device} 1> /dev/null 2>&1 || (echo false && exit 1))";
+        $awkCommand = 'awk \'/inet / {ipstr = $0;gsub("addr:", "", ipstr);split(ipstr, ip, " ");print ip[2]}\'';
+        $ip = trim(shell_exec("{$checkDeviceCommand} && (ifconfig {$device} | {$awkCommand})"));
 
-        if ($ip)
+        if ($ip && $ip != 'false')
         {
             return $ip;
         }
@@ -70,3 +71,5 @@ class System {
         return '0.0.0.0';
     }
 }
+
+echo System::getLocalIp();
