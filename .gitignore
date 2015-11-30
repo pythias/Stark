@@ -18,7 +18,11 @@
 .tmproj
 nbproject
 Thumbs.db
+<<<<<<< HEAD
 
 # Composer
 composer.lock
 vendor
+=======
+.idea
+>>>>>>> 2934140a7fc23d4f99b7ea712b6cae9f1d13c26f

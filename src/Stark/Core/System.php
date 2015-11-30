@@ -2,6 +2,9 @@
 namespace Stark\Core;
 
 class System {
+    const OS_TYPE_MAC_OS = 'Darwin';
+    const OS_TYPE_LINUX  = 'Linux';
+
     public static function runInBackground() {
         $pid = pcntl_fork();
         if ($pid == -1) die("Unable to fork\r\n");
@@ -45,8 +48,26 @@ class System {
         //TODO
     }
 
-    public static function getLocalIp() {
-        //TODO
+    public static function getLocalIp($device = '') {
+        $osType = ucfirst(strtolower(php_uname('s')));
+
+        if (!$device) {
+            // Linux and other OS use eth0 as default device
+            $device = 'eth0';
+
+            if ($osType == self::OS_TYPE_MAC_OS) {
+                $device = 'en0';
+            }
+        }
+
+        $checkDeviceCommand = "(ifconfig {$device} >> /dev/null 2>&1 || (echo false && exit 1))";
+        $awkCommand = 'awk \'/inet / {ipstr = $0;gsub("addr:", "", ipstr);split(ipstr, ip, " ");print ip[2]}\'';
+        $ip = trim(shell_exec("{$checkDeviceCommand} && (ifconfig {$device} | {$awkCommand})"));
+
+        if ($ip && $ip != 'false') {
+            return $ip;
+        }
+
         return '0.0.0.0';
     }
 }
