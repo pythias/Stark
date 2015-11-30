@@ -47,14 +47,11 @@ class System {
     public static function getLocalIp($device = '') {
         $osType = ucfirst(strtolower(php_uname('s')));
 
-
-        if (!$device)
-        {
+        if (!$device) {
             // Linux and other OS use eth0 as default device
             $device = 'eth0';
 
-            if ($osType == self::OS_TYPE_MAC_OS)
-            {
+            if ($osType == self::OS_TYPE_MAC_OS) {
                 $device = 'en0';
             }
         }
@@ -63,8 +60,7 @@ class System {
         $awkCommand = 'awk \'/inet / {ipstr = $0;gsub("addr:", "", ipstr);split(ipstr, ip, " ");print ip[2]}\'';
         $ip = trim(shell_exec("{$checkDeviceCommand} && (ifconfig {$device} | {$awkCommand})"));
 
-        if ($ip && $ip != 'false')
-        {
+        if ($ip && $ip != 'false') {
             return $ip;
         }
 
