@@ -81,10 +81,13 @@ class System {
         switch($last) {
             case 'g':
                 $size *= 1024 * 1024 * 1024;
+                break;
             case 'm':
                 $size *= 1024 * 1024;
+                break;
             case 'k':
                 $size *= 1024;
+                break;
         }
 
         return $size;
