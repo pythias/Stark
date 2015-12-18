@@ -44,6 +44,7 @@ class Worker {
         $this->_startLoop();
         $this->_finalize();
 
+
         exit;
     }
 
@@ -154,6 +155,7 @@ class Worker {
 
     private function _quit() {
         $this->_run = false;
+        shell_exec("kill -9 {$this->pid}");
     }
     
     private function _getStatus() {
