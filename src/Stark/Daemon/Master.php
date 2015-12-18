@@ -164,7 +164,6 @@ class Master extends \Stark\Core\Options {
     }
     
     private function _createWorker($index) {
-        $this->_log->addInfo("Worker {$index} started");
         $currentMicroTime = microtime(true);
 
         if (isset($this->workerStatuses[$index]) == false) {

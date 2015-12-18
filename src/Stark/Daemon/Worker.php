@@ -20,7 +20,7 @@ class Worker {
     private $_socketPort = 0;
     private $_started = false;
 
-    private $_memoryLimitBytes = 0;
+    private $_memoryMaxBytes = 0;
 
     //主进程过来的参数
     public $index;
@@ -66,7 +66,7 @@ class Worker {
         $this->_currentRunTime = 0;
         $this->_currentQPS = 0;
         $this->_masterLastActiveTime = 0;
-        $this->_memoryLimitBytes = \Stark\Core\System::getSizeBytes(ini_get('memory_limit'));
+        $this->_memoryMaxBytes = \Stark\Core\System::getSizeBytes(ini_get('memory_limit')) * 0.8;
 
         $this->_started = true;
         $this->log->addInfo("Worker {$this->index} is started");
@@ -142,7 +142,7 @@ class Worker {
             }
         }
 
-        if ((memory_get_usage() * 0.8) > $this->_memoryLimitBytes) {
+        if ($this->_memoryMaxBytes > 0 && memory_get_usage() > $this->_memoryMaxBytes) {
             return 'Memory limit will reached';
         }
 
