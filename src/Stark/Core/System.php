@@ -70,4 +70,23 @@ class System {
 
         return '0.0.0.0';
     }
+
+    public static function getSizeBytes($size) {
+        $size = trim($size);
+        if ($size == '') {
+            return 0;
+        }
+        
+        $last = strtolower($size[strlen($size) - 1]);
+        switch($last) {
+            case 'g':
+                $size *= 1024 * 1024 * 1024;
+            case 'm':
+                $size *= 1024 * 1024;
+            case 'k':
+                $size *= 1024;
+        }
+
+        return $size;
+    }
 }
