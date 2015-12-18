@@ -44,7 +44,6 @@ class Worker {
         $this->_startLoop();
         $this->_finalize();
 
-
         exit;
     }
 
