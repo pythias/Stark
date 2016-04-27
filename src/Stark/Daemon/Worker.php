@@ -135,10 +135,11 @@ class Worker {
         }
 
         if ($this->heartbeat > 0 && $this->_masterLastActiveTime > 0 && ($this->_queueStartTime - $this->_masterLastActiveTime) > $this->heartbeat) {
-            $masterProcessStatus = \Stark\Core\System::getStatus($this->masterPid);
+            $processor = new \Stark\Model\Processor($this->masterPid);
         
-            if ($masterProcessStatus === false) {
-                return 'Master processer has gone';
+            if ($processor->pid == false) {
+                //TODO: pid+name
+                return "Master processor [{$this->masterPid}] has gone";
             }
         }
 

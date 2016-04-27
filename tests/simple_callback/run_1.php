@@ -7,5 +7,5 @@ function run($worker, $data) {
     $g_count++;
 
     echo "Worker {$worker->index} current: {$g_count}\r\n";
-    usleep(100000);
+    usleep(rand(100000, 500000));
 }

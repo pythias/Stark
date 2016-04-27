@@ -34,6 +34,7 @@ class Master extends \Stark\Core\Options {
     private $_workerStatuses = array();
     private $_workerClients = array();
     private $_worker;
+    private $_missingWorkers = array();
 
     /*Admin*/
     private $_adminSocket;
@@ -136,12 +137,12 @@ class Master extends \Stark\Core\Options {
         if (file_exists($this->_pidFile) == false) return;
 
         $lastPid = file_get_contents($this->_pidFile);
-        $queueDaemonStatus = \Stark\Core\System::getStatus($lastPid);
+        $processor = new \Stark\Model\Processor($lastPid);
         
-        if ($queueDaemonStatus === false) {
+        if ($processor->pid == false) {
             unlink($this->_pidFile);
         } else {
-            //TODO: 判断是否为当前Daemon
+            //TODO: pid+name
             $this->_exit("Daemon '{$this->_name}' is already running");
         }
     }
@@ -210,6 +211,9 @@ class Master extends \Stark\Core\Options {
             $this->_worker->pid = $pid; 
             $this->_worker->index = $index;
             $this->_worker->start();
+
+            pcntl_wait($status, WNOHANG);
+            echo "$status\r\n";
         }
     }
 
@@ -326,13 +330,10 @@ class Master extends \Stark\Core\Options {
 
             if (($now - $lastWorkerTime) > $this->_heartbeat) {
                 $this->_sendHeartbeatToWorkers();
+                $this->_checkWorkerStatus();
 
-                $missingWorkerList = $this->_checkWorkerStatus();
-
-                if (empty($missingWorkerList) === false) {
-                    foreach ($missingWorkerList as $index) {
-                        $this->_createWorker($index);    
-                    }
+                foreach ($this->_missingWorkers as $index) {
+                    $this->_createWorker($index);    
                 }
 
                 $lastWorkerTime = $now;
@@ -362,6 +363,7 @@ class Master extends \Stark\Core\Options {
             $client = $clientInfo['client'];
 
             if ($this->_sendCommandToWorker($client, 'status') === false) {
+                $this->_log->addError("Worker [{$key}] client [{$client}] is not reachable");
                 unset($this->_workerClients[$key]);
                 continue;
             }
@@ -369,20 +371,24 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _checkWorkerStatus() {
-        $missingWorkerList = array();
+        $this->_missingWorkers = array();
         
         foreach ($this->workerStatuses as $index => $worker) {
-            //TODO:检查子进程心跳，对于没有心跳或者心跳迟迟未到的处理
-            //MAC系统没有PROC文件系统，会导致进程多启动
-            $queueDaemonStatus = \Stark\Core\System::getStatus($worker->pid);
+            $processor = new \Stark\Model\Processor($worker->pid);
 
-            if ($queueDaemonStatus === false || intval($queueDaemonStatus['PPid']) != $this->_pid) {
-                $this->_log->addError("Worker {$index} is gone");
-                $missingWorkerList[] = $index;
+            if ($processor->ppid != $this->_pid) {
+                $this->_log->addError("Worker {$index}[{$worker->pid}] is gone");
+                $this->_missingWorkers[] = $index;
+                continue;
+            }
+
+            if ($processor->state == 'Z') {
+                $this->_log->addError("Worker {$index}[{$worker->pid}] is zombie processor");
+                $this->_missingWorkers[] = $index;
+                $processor->exit();
+                continue;
             }
         }
-
-        return $missingWorkerList;
     }
 
     private function _checkAdminCommands() {
