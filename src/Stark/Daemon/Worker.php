@@ -76,7 +76,10 @@ class Worker {
         while ($this->_run) {
             $this->_queueStartTime = microtime(true);
 
-            $this->_checkStatus();
+            if ($this->_checkStatus() == false) {
+                break;
+            }
+
             $this->_receiveCommands();
 
             if ($this->_pause) {
@@ -116,22 +119,25 @@ class Worker {
 
         if ($reason !== true) {
             $this->_restart($reason);
+            return false;
         }
         
         return true;
     }
     
     private function _checkHealth() {
-        if ($this->maxRunSeconds > 0 && ($this->_queueStartTime - $this->_workerStartTime) > $this->maxRunSeconds) {
-            return 'Run time limit reached';
+        $runTime = $this->_queueStartTime - $this->_workerStartTime;
+        if ($this->maxRunSeconds > 0 && $runTime > $this->maxRunSeconds) {
+            return "Run time limit [{$runTime}] reached";
         }
 
         if ($this->maxRunCount > 0 && $this->_currentCount >= $this->maxRunCount) {
-            return 'Queue limit reached';
+            return "Queue limit [{$this->_currentCount}] reached";
         }
 
-        if ($this->maxIdleSeconds > 0 && ($this->_queueStartTime - $this->_lastActiveTime) > $this->maxIdleSeconds) {
-            return 'Idel time limit reached';
+        $idelTime = $this->_queueStartTime - $this->_lastActiveTime;
+        if ($this->maxIdleSeconds > 0 && $idelTime > $this->maxIdleSeconds) {
+            return "Idel time limit [{$idelTime}] reached";
         }
 
         if ($this->heartbeat > 0 && $this->_masterLastActiveTime > 0 && ($this->_queueStartTime - $this->_masterLastActiveTime) > $this->heartbeat) {
@@ -143,8 +149,9 @@ class Worker {
             }
         }
 
-        if ($this->_memoryMaxBytes > 0 && memory_get_usage() > $this->_memoryMaxBytes) {
-            return 'Memory limit will reached';
+        $memoryUsage = memory_get_usage();
+        if ($this->_memoryMaxBytes > 0 && $memoryUsage > $this->_memoryMaxBytes) {
+            return 'Memory limit [$memoryUsage] will reached';
         }
 
         return true;
