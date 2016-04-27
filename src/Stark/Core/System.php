@@ -36,11 +36,26 @@ class System {
         return $data;
     }
 
+    public static function getOSType() {
+        return ucfirst(strtolower(php_uname('s')));
+    }
+
     public static function getProcNumber() {
-        return shell_exec("nproc");
+        $osType = self::getOSType();
+        if ($osType == self::OS_TYPE_MAC_OS) {
+            return intval(shell_exec("sysctl -a|grep cpu|grep ncpu|awk -F': ' '{print $2}'"));
+        }
+
+        //return intval(shell_exec('grep "^physical id" /proc/cpuinfo|wc -l'))
+        return intval(shell_exec("nproc"));
     }
 
     public static function setAffinity($pid, $mask = '1-32') {
+        $osType = self::getOSType();
+        if ($osType == self::OS_TYPE_MAC_OS) {
+            return false;
+        }
+
         return shell_exec("taskset -cp {$mask} {$pid}");
     }
 
@@ -49,11 +64,10 @@ class System {
     }
 
     public static function getLocalIp($device = '') {
-        $osType = ucfirst(strtolower(php_uname('s')));
-
-        if (!$device) {
+        if ($device == '') {
             // Linux and other OS use eth0 as default device
             $device = 'eth0';
+            $osType = self::getOSType();
 
             if ($osType == self::OS_TYPE_MAC_OS) {
                 $device = 'en0';

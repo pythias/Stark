@@ -5,6 +5,7 @@ use Monolog\Logger;
 use Monolog\Handler\StreamHandler;
 
 class Master extends \Stark\Core\Options {
+    private $_processorCount = 0;
     private $_pid;
     private $_pidFile;
     private $_startTime = 0.0;
@@ -56,11 +57,8 @@ class Master extends \Stark\Core\Options {
 
         $this->_daemonIsRunning();
 
-        \Stark\Core\System::runInBackground();
-        $this->_pid = posix_getpid();
-        $this->_createPidFile();
-        \Stark\Core\System::setAffinity($this->_pid);
-        \Stark\Core\System::setProcTitle($this->_pid, "daemon '{$this->_name}'");
+        //init process env
+        $this->_initializeProc();
 
         //sample worker
         $this->_createSampleWorker();
@@ -72,6 +70,19 @@ class Master extends \Stark\Core\Options {
         $this->_createAdminSocket();
         $this->_startWorkers();
         $this->_startLoop();
+    }
+
+    private function _initializeProc() {
+        \Stark\Core\System::runInBackground();
+
+        $this->_pid = posix_getpid();
+        $this->_createPidFile();
+        \Stark\Core\System::setProcTitle($this->_pid, "daemon '{$this->_name}'");
+
+        $this->_processorCount = \Stark\Core\System::getProcNumber();
+        if ($this->_processorCount > 2) {
+            \Stark\Core\System::setAffinity($this->_pid, "1-{$this->_processorCount}");
+        }
     }
 
     private function _initialize() {
@@ -191,7 +202,9 @@ class Master extends \Stark\Core\Options {
             socket_close($this->_adminSocket);
 
             $pid = posix_getpid();
-            \Stark\Core\System::setAffinity($pid, '2-32');
+            if ($this->_processorCount > 2) {
+                \Stark\Core\System::setAffinity($pid, "2-{$this->_processorCount}");
+            }
             \Stark\Core\System::setProcTitle($pid, "daemon '{$this->_name}' worker {$index}");
 
             $this->_worker->pid = $pid; 

@@ -8,7 +8,8 @@
     "require": {
         "php": ">=5.3",
         "monolog/monolog": "*",
-        "ext-pcntl": "*"
+        "ext-pcntl": "*",
+        "ext-posix": "*"
     },
     "autoload": {
         "psr-4": {"Stark\\": "src/Stark"}
