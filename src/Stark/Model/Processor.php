@@ -27,7 +27,7 @@ class Processor {
         $this->args = implode(' ', array_slice($info, 6));
     }
 
-    public function exit($isChild = true) {
+    public function quit($isChild = true) {
         posix_kill($this->pid, SIGKILL);
 
         if ($isChild) {

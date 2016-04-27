@@ -134,7 +134,9 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _daemonIsRunning() {
-        if (file_exists($this->_pidFile) == false) return;
+        if (file_exists($this->_pidFile) == false) {
+            return;
+        }
 
         $lastPid = file_get_contents($this->_pidFile);
         $processor = new \Stark\Model\Processor($lastPid);
@@ -211,9 +213,6 @@ class Master extends \Stark\Core\Options {
             $this->_worker->pid = $pid; 
             $this->_worker->index = $index;
             $this->_worker->start();
-
-            pcntl_wait($status, WNOHANG);
-            echo "$status\r\n";
         }
     }
 
@@ -385,7 +384,7 @@ class Master extends \Stark\Core\Options {
             if ($processor->state == 'Z') {
                 $this->_log->addError("Worker {$index}[{$worker->pid}] is zombie processor");
                 $this->_missingWorkers[] = $index;
-                $processor->exit();
+                $processor->quit();
                 continue;
             }
         }
