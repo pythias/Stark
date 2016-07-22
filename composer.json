@@ -9,7 +9,8 @@
         "php": ">=5.3",
         "monolog/monolog": "*",
         "ext-pcntl": "*",
-        "ext-posix": "*"
+        "ext-posix": "*",
+        "ext-sockets": "*"
     },
     "autoload": {
         "psr-4": {"Stark\\": "src/Stark"}
