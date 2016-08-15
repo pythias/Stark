@@ -24,7 +24,7 @@ Usage
 
 We just need only one script file and one config file. The php script file defines the callback functions. The ini config file defines daemon's enviroments. You can use this command to start you daemon:
 ```
-php src/Stark/run.php -f [ini_config_file]
+php bin/stark -f [ini_config_file]
 ```
 
 Daemon configuration

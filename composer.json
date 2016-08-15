@@ -15,6 +15,7 @@
     "autoload": {
         "psr-4": {"Stark\\": "src/Stark"}
     },
+    "bin": ["bin/stark"],
     "authors": [
         {
             "name" : "Chenjie",
