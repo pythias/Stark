@@ -46,7 +46,6 @@ function include_run_file($dir, $run_file) {
 
     require_once $run_file;
 
-    //必须存在run回调方法
     if (function_exists("run") == false) {
         exit_by_error("Run file '{$run_file}' is invalid");
     }
@@ -73,6 +72,7 @@ function set_master_options(&$options, $config) {
         'name' => get_option_value($config, 'main.name', 'Stark_' . time()),
         'host' => get_option_value($config, 'main.host', '127.0.0.1'),
         'port' => get_option_value($config, 'main.port', 9003),
+        'workingDirectory' => get_option_value($config, 'main.working_dir', '/tmp'),
         'maxWorkerCount' => get_option_value($config, 'worker.count', 1),
         'maxRunCount' => get_option_value($config, 'worker.max_run_count', 10000),
         'maxRunSeconds' => get_option_value($config, 'worker.max_run_seconds', 3600),
