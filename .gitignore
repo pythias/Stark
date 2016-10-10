@@ -18,9 +18,8 @@
 .tmproj
 nbproject
 Thumbs.db
+.idea
 
 # Composer
 composer.lock
 vendor
-=======
-.idea

@@ -100,6 +100,12 @@ class Master extends \Stark\Core\Options {
         $this->_log->pushHandler(new StreamHandler($logFile, $this->_logLevel));
     }
 
+    private function _resetLog() {
+        $logFile = "{$this->_workingDirectory}/logs/{$this->_name}-" . date('Y-m-d') . ".log";
+        $this->_log->popHandler();
+        $this->_log->pushHandler(new StreamHandler($logFile, $this->_logLevel));
+    }
+
     private function _initializeWorkingDirectory() {
         if (empty($this->_workingDirectory)) {
             $this->_workingDirectory = '/tmp';
@@ -188,6 +194,9 @@ class Master extends \Stark\Core\Options {
             $this->_log->addError("Worker {$index} cannt start right now");
             return false;
         }
+
+        // Reset logs
+        $this->_resetLog();
         
         $this->workerStatuses[$index]->startTime = $currentMicroTime;
         $this->workerStatuses[$index]->lastActiveTime = $currentMicroTime;
