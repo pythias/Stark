@@ -52,6 +52,10 @@ class System {
     }
 
     public static function getProcNumber() {
+        if (function_exists('shell_exec') == false) {
+            return false;
+        }
+
         if (self::isMac()) {
             return intval(shell_exec("sysctl -a|grep cpu|grep ncpu|awk -F': ' '{print $2}'"));
         }
@@ -61,6 +65,10 @@ class System {
     }
 
     public static function setAffinity($pid, $mask = '1-32') {
+        if (function_exists('shell_exec') == false) {
+            return false;
+        }
+
         if (self::isMac()) {
             return false;
         }
@@ -73,6 +81,10 @@ class System {
     }
 
     public static function getLocalIp($device = '') {
+        if (function_exists('shell_exec') == false) {
+            return '127.0.0.1';
+        }
+
         if ($device == '') {
             // Linux and other OS use eth0 as default device
             $device = self::isLinux() ? 'eth0' : 'en0';
@@ -86,7 +98,7 @@ class System {
             return $ip;
         }
 
-        return '0.0.0.0';
+        return '127.0.0.1';
     }
 
     public static function getSizeBytes($size) {

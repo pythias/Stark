@@ -8,7 +8,7 @@ class Options {
 
     protected function setOptions($options) {
         if (is_array($options) == false && empty($options)) {
-            return;
+            return false;
         }
 
         foreach ($options as $key => $value) {

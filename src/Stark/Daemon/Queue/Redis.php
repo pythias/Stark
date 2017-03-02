@@ -5,9 +5,16 @@ class Redis extends Base {
     protected $_host = '127.0.0.1';
     protected $_port = '6379';
     protected $_timeout = 2.0;
-    protected $_key = 'stark';
-    private $_redis = false;
     private $_prioritySupported = false;
+    /**
+     * @var string|array
+     */
+    protected $_key = 'stark';
+
+    /**
+     * @var bool|\Redis
+     */
+    private $_redis = false;
 
     public function init(\Stark\Daemon\Worker $worker) {
         $this->_redis = new \Redis();

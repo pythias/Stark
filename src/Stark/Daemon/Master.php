@@ -43,8 +43,8 @@ class Master extends \Stark\Core\Options {
     const UNIX_PATH_MAX = 108;
     const COMMAND_FROM_ADMIN = 0;
     const COMMAND_FROM_WORKER = 1;
-    const WORKER_START_INTERVAL_SECONDES = 1;
-    const ADMIN_DATA_INTERVAL_SECONDES = 0.01;
+    const WORKER_START_INTERVAL_SECONDS = 1;
+    const ADMIN_DATA_INTERVAL_SECONDS = 0.01;
 
     const WORKER_PAYLOAD_INDEX = 0;
     const WORKER_PAYLOAD_PID = 1;
@@ -135,7 +135,7 @@ class Master extends \Stark\Core\Options {
 
     private function _checkParameters() {
         if ($this->_consumer == null) {
-            $this->_exit("Cannt run daemon without callback");
+            $this->_exit("Can't run daemon without callback");
         }
     }
 
@@ -186,11 +186,11 @@ class Master extends \Stark\Core\Options {
     private function _createWorker($index) {
         $currentMicroTime = microtime(true);
 
-        if (isset($this->workerStatuses[$index]) == false) {
-            $this->workerStatuses[$index] = new \Stark\Daemon\Status(); 
+        if (isset($this->_workerStatuses[$index]) == false) {
+            $this->_workerStatuses[$index] = new \Stark\Daemon\Status();
         }
 
-        if (($currentMicroTime - $this->workerStatuses[$index]->startTime) < self::WORKER_START_INTERVAL_SECONDES) {
+        if (($currentMicroTime - $this->_workerStatuses[$index]->startTime) < self::WORKER_START_INTERVAL_SECONDS) {
             $this->_log->addError("Worker {$index} cannt start right now");
             return false;
         }
@@ -198,8 +198,8 @@ class Master extends \Stark\Core\Options {
         // Reset logs
         $this->_resetLog();
         
-        $this->workerStatuses[$index]->startTime = $currentMicroTime;
-        $this->workerStatuses[$index]->lastActiveTime = $currentMicroTime;
+        $this->_workerStatuses[$index]->startTime = $currentMicroTime;
+        $this->_workerStatuses[$index]->lastActiveTime = $currentMicroTime;
         
         $forkPid = pcntl_fork();
 
@@ -208,7 +208,7 @@ class Master extends \Stark\Core\Options {
         }
         
         if ($forkPid) {
-            $this->workerStatuses[$index]->pid = $forkPid;
+            $this->_workerStatuses[$index]->pid = $forkPid;
         } else {
             socket_close($this->_daemonSocket);
             socket_close($this->_adminSocket);
@@ -327,7 +327,7 @@ class Master extends \Stark\Core\Options {
         while (true) {
             $now = microtime(true);
 
-            if (($now - $lastAdminTime) > self::ADMIN_DATA_INTERVAL_SECONDES) {
+            if (($now - $lastAdminTime) > self::ADMIN_DATA_INTERVAL_SECONDS) {
                 $this->_acceptConnection($this->_adminSocket, $this->_adminClients);
                 $this->_checkAdminCommands();
 
@@ -381,7 +381,7 @@ class Master extends \Stark\Core\Options {
     private function _checkWorkerStatus() {
         $this->_missingWorkers = array();
         
-        foreach ($this->workerStatuses as $index => $worker) {
+        foreach ($this->_workerStatuses as $index => $worker) {
             $processor = new \Stark\Model\Processor($worker->pid);
 
             if ($processor->ppid != $this->_pid) {
@@ -464,6 +464,7 @@ class Master extends \Stark\Core\Options {
                 break;
             
             default:
+                $commandHandle = '';
                 Protocol::sendLine($client, 'Wrong client.');
                 break;
         }
@@ -477,8 +478,6 @@ class Master extends \Stark\Core\Options {
 
             return false;
         }
-
-        return true;
     }
 
     private function _restartWorkerHandler($client, $arguments = array()) {
@@ -499,7 +498,7 @@ class Master extends \Stark\Core\Options {
     private function _statusWorkerHandler($client, $arguments = array()) {
         $workerIndex = $arguments[self::WORKER_PAYLOAD_INDEX];
         $data = json_decode($arguments[self::WORKER_PAYLOAD_DATA], true);
-        $this->workerStatuses[$workerIndex]->update($data);
+        $this->_workerStatuses[$workerIndex]->update($data);
 
         foreach ($this->_workerClients as $key => &$clientInfo) {
             if ($clientInfo['client'] == $client) {
@@ -548,7 +547,7 @@ class Master extends \Stark\Core\Options {
         $totalQPS = 0.0;
         $totalMemory = 0;
                                 
-        foreach ($this->workerStatuses as $childInfo) {
+        foreach ($this->_workerStatuses as $childInfo) {
             $totalCount += $childInfo->totalCount;
             $totalTime += $childInfo->totalTime;
             $totalMemory += $childInfo->memory;

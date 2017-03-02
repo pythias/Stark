@@ -12,6 +12,11 @@ class Processor {
 
     public function __construct($pid) {
         $pid = intval($pid);
+
+        if (function_exists('shell_exec') == false) {
+            return;
+        }
+
         $ps = trim(shell_exec("ps -eo pid,ppid,pcpu,pmem,time,state,args |grep '^[ ]*{$pid}'"));
         $info = preg_split('/\s+/', $ps);
         if (count($info) < 7) {

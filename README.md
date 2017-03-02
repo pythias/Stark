@@ -6,7 +6,7 @@ Stark
 Requires
 --------
 
-* PHP 5.3 or Higher
+* PHP 5.4 or Higher
 * A POSIX compatible operating system (Linux, OSX, BSD)
 * POSIX and PCNTL extensions for PHP
 * Redis extensions 
