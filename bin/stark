@@ -19,6 +19,10 @@ if (file_exists($file) === false) {
     exit_by_error("Config file '{$file}' is not exists");
 }
 
+if (\Stark\Core\System::isMac() && function_exists('shell_exec') == false) {
+    exit_by_error("Function 'shell_exec' must be enabled in the Mac");
+}
+
 try {
     $daemon = new \Stark\Daemon\Master(get_options($file));
     $daemon->start();

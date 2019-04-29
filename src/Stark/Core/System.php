@@ -2,10 +2,9 @@
 namespace Stark\Core;
 
 class System {
-    const OS_TYPE_MAC_OS = 'Darwin';
+    const OS_TYPE_MAC = 'Darwin';
     const OS_TYPE_LINUX  = 'Linux';
 
-    private static $_osType = '';
     private static $_isMac = null;
     private static $_isLinux = null;
 
@@ -22,37 +21,22 @@ class System {
         elseif ($pid) exit;           
     }
 
-    public static function getOSType() {
-        if (self::$_osType) {
-            return self::$_osType;
-        }
-
-        self::$_osType = ucfirst(strtolower(php_uname('s')));
-        return self::$_osType;
-    }
-
     public static function isMac() {
-        if (self::$_isMac !== null) {
-            return self::$_isMac;
-        }
-
-        self::$_isMac = (self::getOSType() == self::OS_TYPE_MAC_OS);
-
-        return self::$_isMac;
+        return PHP_OS == self::OS_TYPE_MAC;
     }
 
     public static function isLinux() {
-        if (self::$_isLinux !== null) {
-            return self::$_isLinux;
-        }
-
-        self::$_isLinux = (self::getOSType() == self::OS_TYPE_LINUX);
-
-        return self::$_isLinux;
+        return PHP_OS == self::OS_TYPE_LINUX;
     }
 
     public static function getProcNumber() {
         if (function_exists('shell_exec') == false) {
+            if (is_file('/proc/cpuinfo')) {
+                $cpuinfo = file_get_contents('/proc/cpuinfo');
+                preg_match_all('/^processor/m', $cpuinfo, $matches);
+                return count($matches[0]);
+            }
+
             return false;
         }
 
@@ -60,7 +44,6 @@ class System {
             return intval(shell_exec("sysctl -a|grep cpu|grep ncpu|awk -F': ' '{print $2}'"));
         }
 
-        //return intval(shell_exec('grep "^physical id" /proc/cpuinfo|wc -l'))
         return intval(shell_exec("nproc"));
     }
 
@@ -80,25 +63,8 @@ class System {
         //TODO
     }
 
-    public static function getLocalIp($device = '') {
-        if (function_exists('shell_exec') == false) {
-            return '127.0.0.1';
-        }
-
-        if ($device == '') {
-            // Linux and other OS use eth0 as default device
-            $device = self::isLinux() ? 'eth0' : 'en0';
-        }
-
-        $checkDeviceCommand = "(ifconfig {$device} >> /dev/null 2>&1 || (echo false && exit 1))";
-        $awkCommand = 'awk \'/inet / {ipstr = $0;gsub("addr:", "", ipstr);split(ipstr, ip, " ");print ip[2]}\'';
-        $ip = trim(shell_exec("{$checkDeviceCommand} && (ifconfig {$device} | {$awkCommand})"));
-
-        if ($ip && $ip != 'false') {
-            return $ip;
-        }
-
-        return '127.0.0.1';
+    public static function getLocalIp() {
+        return getHostByName(getHostName());
     }
 
     public static function getSizeBytes($size) {
@@ -107,19 +73,26 @@ class System {
             return 0;
         }
         
-        $last = strtolower($size[strlen($size) - 1]);
-        switch($last) {
+        $unit = strtolower(substr($size, -1, 1));
+        $power = 0;
+        switch($unit) {
+            case 'p':
+                $power = 5;
+                break;
+            case 't':
+                $power = 4;
+                break;
             case 'g':
-                $size *= 1024 * 1024 * 1024;
+                $power = 3;
                 break;
             case 'm':
-                $size *= 1024 * 1024;
+                $power = 2;
                 break;
             case 'k':
-                $size *= 1024;
+                $power = 1;
                 break;
         }
 
-        return $size;
+        return substr($size, 0, -1) * pow(1024, $power);
     }
 }

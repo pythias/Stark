@@ -163,7 +163,7 @@ class Worker {
         }
 
         $this->_sendResponse('restart', $reason);
-        $this->_statusCommandHandle(); //TODO:汇报失败时从文件恢复状态
+        $this->_statusCommandHandle(); //TODO: 汇报失败时从文件恢复状态
         $this->_quit();
     }
 

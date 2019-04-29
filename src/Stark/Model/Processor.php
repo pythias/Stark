@@ -12,6 +12,10 @@ class Processor {
 
     public function __construct($pid) {
         $pid = intval($pid);
+        
+        if (\Stark\Core\System::isLinux() && file_exists("/proc/{$pid}")) {
+            $this->pid = $pid;
+        }
 
         if (function_exists('shell_exec') == false) {
             return;
