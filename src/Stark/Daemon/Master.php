@@ -3,229 +3,165 @@ namespace Stark\Daemon;
 
 use Monolog\Logger;
 use Monolog\Handler\StreamHandler;
+use Stark\Core\System;
+use Stark\Model\Processor;
+use Stark\Model\Status;
+use Stark\Utils\Unit;
 
-class Master extends \Stark\Core\Options {
-    private $_processorCount = 0;
+class Master {
     private $_pid;
     private $_pidFile;
     private $_startTime = 0.0;
+
+    /**
+     * @var Logger
+     */
     private $_log;
-    private $_consumer = null;
-    private $_queue = null;
 
     /*Options*/
-    protected $_name = 'daemon';
-    protected $_host = '127.0.0.1';
-    protected $_port = '1980';
-    protected $_workingDirectory = '/tmp';
-    protected $_heartbeat = 2.0;
-    protected $_maxWorkerCount = 1;
-    protected $_maxRunCount = 0;
-    protected $_maxRunSeconds = 0;
-    protected $_maxIdleSeconds = 0;
-    protected $_emptySleepSeconds = 0;
-    protected $_memoryLimit = '1024M';
-    protected $_config = array();
-    protected $_logLevel = Logger::INFO;
+    private $_name = 'daemon';
+    private $_host = '127.0.0.1';
+    private $_port = '9003';
+    private $_workingDirectory = '/tmp';
+    private $_workerCount = 3;
+    private $_memoryLimit = '1024M';
+    private $_logLevel = Logger::INFO;
+
+    /**
+     * @var Worker
+     */
+    private $_worker;
 
     /*Daemon*/
-    private $_daemonSocketFile;
-    private $_daemonSocket;
-    private $_workerStatuses = array();
-    private $_workerClients = array();
-    private $_worker;
-    private $_missingWorkers = array();
+    private $_sockFile;
+    private $_socket;
+    private $_workerStatuses = [];
+    private $_workerClients = [];
+    private $_missingWorkers = [];
+
+    private $_logDir = '';
+    private $_runDir = '';
+    private $_dataDir = '';
 
     /*Admin*/
     private $_adminSocket;
-    private $_adminClients = array();
+    private $_adminClients = [];
 
     const UNIX_PATH_MAX = 108;
     const COMMAND_FROM_ADMIN = 0;
     const COMMAND_FROM_WORKER = 1;
     const WORKER_START_INTERVAL_SECONDS = 1;
     const ADMIN_DATA_INTERVAL_SECONDS = 0.01;
+    const HEARTBEAT = 2;
 
     const WORKER_PAYLOAD_INDEX = 0;
     const WORKER_PAYLOAD_PID = 1;
     const WORKER_PAYLOAD_PORT = 2;
     const WORKER_PAYLOAD_DATA = 3;
-    
+
     public function start() {
         ini_set('memory_limit', $this->_memoryLimit);
 
-        $this->_initialize();
+        $this->_initDirs();
+        $this->_initLog();
+        $this->_initFiles();
 
-        $this->_daemonIsRunning();
+        if ($this->_stillRunning()) {
+            $this->_exit("Daemon '{$this->_name}' is already running");
+        }
 
-        //init process env
-        $this->_initializeProc();
+        $this->_initProcess();
+        $this->_initSignal();
 
         //sample worker
-        $this->_createSampleWorker();
+        $this->_checkWorker();
 
         //start daemon
         $this->_startTime = microtime(true);
-        $this->_setupSignal();
-        $this->_createDaemonSocket();
-        $this->_createAdminSocket();
+
+        $this->_startMasterServer();
+        $this->_startAdminServer();
         $this->_startWorkers();
-        $this->_startLoop();
+
+        $this->_loop();
     }
 
-    private function _initializeProc() {
-        \Stark\Core\System::runInBackground();
-
-        $this->_pid = posix_getpid();
-        $this->_createPidFile();
-        \Stark\Core\System::setProcTitle($this->_pid, "daemon '{$this->_name}'");
-
-        $this->_processorCount = \Stark\Core\System::getProcNumber();
-        if ($this->_processorCount > 2) {
-            \Stark\Core\System::setAffinity($this->_pid, "1-{$this->_processorCount}");
-        }
-    }
-
-    private function _initialize() {
-        $this->_initializeWorkingDirectory();
-        $this->_initializeLog();
-        $this->_initializeFiles();
-        $this->_checkParameters();
-    }
-
-    private function _initializeLog() {
-        $logFile = "{$this->_workingDirectory}/logs/{$this->_name}-" . date('Y-m-d') . ".log";
+    private function _initLog() {
+        $logFile = "{$this->_logDir}/{$this->_name}-" . date('Y-m-d') . ".log";
 
         $this->_log = new Logger($this->_name);
         $this->_log->pushHandler(new StreamHandler($logFile, $this->_logLevel));
     }
 
     private function _resetLog() {
-        $logFile = "{$this->_workingDirectory}/logs/{$this->_name}-" . date('Y-m-d') . ".log";
+        $logFile = "{$this->_logDir}/{$this->_name}-" . date('Y-m-d') . ".log";
         $this->_log->popHandler();
         $this->_log->pushHandler(new StreamHandler($logFile, $this->_logLevel));
     }
 
-    private function _initializeWorkingDirectory() {
+    private function _initDirs() {
         if (empty($this->_workingDirectory)) {
             $this->_workingDirectory = '/tmp';
         }
 
         $this->_workingDirectory = rtrim($this->_workingDirectory, '/');
+        $this->_logDir = $this->_workingDirectory . "/logs";
+        $this->_dataDir = $this->_workingDirectory . "/data";
+        $this->_runDir = $this->_workingDirectory . "/run";
 
-        if (is_dir($this->_workingDirectory) == false) {
-            if (mkdir($this->_workingDirectory, 0777, true) == false) {
-                $this->_exit("Unable to create working directory: {$this->_workingDirectory}");
+        $this->_createDir($this->_workingDirectory);
+        $this->_createDir($this->_logDir);
+        $this->_createDir($this->_dataDir);
+        $this->_createDir($this->_runDir);
+    }
+
+    private function _createDir($dir) {
+        if (is_dir($dir) == false) {
+            if (mkdir($dir, 0777, true) == false) {
+                $this->_exit("Unable to create working directory: {$dir}");
             }
         }
 
-        if (is_writable($this->_workingDirectory) == false) {
-            $this->_exit("Unable to write working directory: {$this->_workingDirectory}");
+        if (is_writable($dir) == false) {
+            $this->_exit("Unable to write working directory: {$dir}");
         }
     }
 
-    private function _initializeFiles() {
-        $this->_pidFile = "{$this->_workingDirectory}/{$this->_name}.pid";
-        $this->_daemonSocketFile = "{$this->_workingDirectory}/{$this->_name}.sock";
+    private function _initFiles() {
+        $this->_pidFile = "{$this->_runDir}/{$this->_name}.pid";
+        $this->_sockFile = "{$this->_runDir}/{$this->_name}.sock";
         
-        if (strlen($this->_daemonSocketFile) > self::UNIX_PATH_MAX) {
-            $this->_exit("Socket path {$this->_daemonSocketFile} is too long");
+        if (strlen($this->_sockFile) > self::UNIX_PATH_MAX) {
+            $this->_exit("Socket path {$this->_sockFile} is too long");
         }
     }
 
-    private function _checkParameters() {
-        if ($this->_consumer == null) {
-            $this->_exit("Can't run daemon without callback");
-        }
-    }
-
-    private function _daemonIsRunning() {
+    private function _stillRunning() {
         if (file_exists($this->_pidFile) == false) {
-            return;
+            return false;
         }
 
         $lastPid = file_get_contents($this->_pidFile);
-        $processor = new \Stark\Model\Processor($lastPid);
-        
-        if ($processor->pid == false) {
-            unlink($this->_pidFile);
-        } else {
-            //TODO: pid+name
-            $this->_exit("Daemon '{$this->_name}' is already running");
+        $processor = new Processor($lastPid);
+        if ($processor->isAlive()) {
+            return true;
         }
+
+        unlink($this->_pidFile);
+        return false;
     }
 
-    private function _createPidFile() {
+    private function _initProcess() {
+        System::becomeDaemon();
+
+        $this->_pid = posix_getpid();
+
         if (file_put_contents($this->_pidFile, $this->_pid) == false) {
             $this->_exit("Unable to write pid file '{$this->_pidFile}'");
         }
     }
 
-    private function _createSampleWorker() {
-        $this->_worker = new \Stark\Daemon\Worker();
-        $this->_worker->log = $this->_log;
-        $this->_worker->daemonSocketFile = $this->_daemonSocketFile;
-        $this->_worker->maxWorkerCount = $this->_maxWorkerCount;
-        $this->_worker->masterPid = $this->_pid;
-        $this->_worker->heartbeat = $this->_heartbeat;
-        $this->_worker->consumer = $this->_consumer;
-        $this->_worker->queue = $this->_queue;
-        $this->_worker->maxRunCount = $this->_maxRunCount;
-        $this->_worker->maxRunSeconds = $this->_maxRunSeconds;
-        $this->_worker->maxIdleSeconds = $this->_maxIdleSeconds;
-        $this->_worker->emptySleepSeconds = $this->_emptySleepSeconds;
-        $this->_worker->config = $this->_config;
-    }
-
-    private function _startWorkers() {
-        for ($i = 0; $i < $this->_maxWorkerCount; $i++) {
-            $this->_createWorker($i);
-        }
-    }
-    
-    private function _createWorker($index) {
-        $currentMicroTime = microtime(true);
-
-        if (isset($this->_workerStatuses[$index]) == false) {
-            $this->_workerStatuses[$index] = new \Stark\Daemon\Status();
-        }
-
-        if (($currentMicroTime - $this->_workerStatuses[$index]->startTime) < self::WORKER_START_INTERVAL_SECONDS) {
-            $this->_log->addError("Worker {$index} cannt start right now");
-            return false;
-        }
-
-        // Reset logs
-        $this->_resetLog();
-        
-        $this->_workerStatuses[$index]->startTime = $currentMicroTime;
-        $this->_workerStatuses[$index]->lastActiveTime = $currentMicroTime;
-        
-        $forkPid = pcntl_fork();
-
-        if ($forkPid == -1) {
-            $this->_exit("Unable to fork worker {$index}");
-        }
-        
-        if ($forkPid) {
-            $this->_workerStatuses[$index]->pid = $forkPid;
-        } else {
-            socket_close($this->_daemonSocket);
-            socket_close($this->_adminSocket);
-
-            $pid = posix_getpid();
-            if ($this->_processorCount > 2) {
-                \Stark\Core\System::setAffinity($pid, "2-{$this->_processorCount}");
-            }
-            \Stark\Core\System::setProcTitle($pid, "daemon '{$this->_name}' worker {$index}");
-
-            $this->_worker->pid = $pid; 
-            $this->_worker->index = $index;
-            $this->_worker->start();
-        }
-    }
-
-    private function _setupSignal() {
+    private function _initSignal() {
         declare(ticks = 1);
 
         pcntl_signal(SIGCHLD, SIG_IGN);
@@ -236,37 +172,93 @@ class Master extends \Stark\Core\Options {
 
     private function _exit($message) {
         if ($this->_log) {
-            $this->_log->addInfo($message);
+            $this->_log->info($message);
         }
 
         exit("{$message}\r\n");
     }
 
-    private function _createDaemonSocket() {
-        if (file_exists($this->_daemonSocketFile)) {
-            unlink($this->_daemonSocketFile);
+    private function _checkWorker() {
+        if ($this->_worker == null) {
+            $this->_exit("Worker cant be empty.");
         }
 
-        $this->_daemonSocket = socket_create(AF_UNIX, SOCK_STREAM, 0);
+        $this->_worker->name = $this->_name;
+        $this->_worker->log = $this->_log;
+        $this->_worker->dataDir = $this->_dataDir;
+        $this->_worker->sockFile = $this->_sockFile;
+        $this->_worker->masterPid = $this->_pid;
+    }
 
-        if (!$this->_daemonSocket) {
+    private function _startWorkers() {
+        for ($i = 0; $i < $this->_workerCount; $i++) {
+            $this->_createWorker($i);
+        }
+    }
+
+    private function _createWorker($index) {
+        $currentMicroTime = microtime(true);
+        if (isset($this->_workerStatuses[$index]) == false) {
+            $this->_workerStatuses[$index] = new Status();
+        }
+
+        /** @var Status $status */
+        $status = $this->_workerStatuses[$index];
+
+        if (($currentMicroTime - $status->getRoundStartTime()) < self::WORKER_START_INTERVAL_SECONDS) {
+            $this->_log->error("Worker {$index} cant start right now");
+            return false;
+        }
+
+        // Reset logs
+        $this->_resetLog();
+        $status->setRoundStartTime($currentMicroTime);
+
+        $forkPid = pcntl_fork();
+
+        if ($forkPid == -1) {
+            $this->_exit("Unable to fork worker {$index}");
+        }
+        
+        if ($forkPid) {
+            $status->setPid($forkPid);
+        } else {
+            socket_close($this->_socket);
+            socket_close($this->_adminSocket);
+
+            $pid = posix_getpid();
+
+            $this->_worker->pid = $pid;
+            $this->_worker->index = $index;
+            $this->_worker->start();
+        }
+    }
+
+    private function _startMasterServer() {
+        if (file_exists($this->_sockFile)) {
+            unlink($this->_sockFile);
+        }
+
+        $this->_socket = socket_create(AF_UNIX, SOCK_STREAM, 0);
+
+        if (!$this->_socket) {
             $this->_exit('Unable to create daemon socket'); 
         }
 
-        if (!socket_bind($this->_daemonSocket, $this->_daemonSocketFile)) {
+        if (!socket_bind($this->_socket, $this->_sockFile)) {
             $this->_exit('Unable to bind daemon socket');
         }
         
-        if (!socket_listen($this->_daemonSocket)) {
+        if (!socket_listen($this->_socket)) {
             $this->_exit("Unable to listen daemon socket");
         }
 
-        if (!socket_set_nonblock($this->_daemonSocket)) {
+        if (!socket_set_nonblock($this->_socket)) {
             $this->_exit("Unable to set daemon socket option");
         }
     }
 
-    private function _createAdminSocket() {
+    private function _startAdminServer() {
         $this->_adminSocket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
 
         if (!$this->_adminSocket) {
@@ -281,28 +273,26 @@ class Master extends \Stark\Core\Options {
             $this->_exit('Unable to bind admin socket');
         }
 
-        if ($this->_port == 0) {
-            socket_getsockname($this->_adminSocket, $this->_host, $this->_port);
-        }
-        
         if (!socket_listen($this->_adminSocket)) {
             $this->_exit('Unable to listen admin socket');
         }
 
-        socket_set_nonblock($this->_adminSocket);
+        if (!socket_set_nonblock($this->_adminSocket)) {
+            $this->_exit("Unable to set admin socket option");
+        }
     }
 
     private function _quit() {
-        $this->_log->addInfo("Ending daemon: {$this->_name}");
+        $this->_log->info("Ending daemon: {$this->_name}");
 
         foreach ($this->_workerClients as $processClient) {
             $this->_sendCommandToWorker($processClient['client'], 'quit');
         }
 
-        if (is_resource($this->_daemonSocket)) {
-            socket_close($this->_daemonSocket);
+        if (is_resource($this->_socket)) {
+            socket_close($this->_socket);
         }
-        
+
         if (is_resource($this->_adminSocket)) {
             socket_close($this->_adminSocket);
         }
@@ -310,15 +300,25 @@ class Master extends \Stark\Core\Options {
         foreach ($this->_adminClients as $client) {
             socket_close($client['client']);
         }
-        
-        unlink($this->_pidFile);
-        unlink($this->_daemonSocketFile);
-        
+
+        $this->_removeFiles();
         exit;
     }
-    
-    private function _startLoop() {
-        $this->_log->addInfo("Starting daemon: {$this->_name}");
+
+    private function _removeFiles() {
+        unlink($this->_pidFile);
+        unlink($this->_sockFile);
+
+        for ($i = 0; $i < $this->_workerCount; $i++) {
+            $statusFile = "{$this->_dataDir}/{$this->_name}-{$i}.status";
+            if (file_exists($statusFile)) {
+                unlink($statusFile);
+            }
+        }
+    }
+
+    private function _loop() {
+        $this->_log->info("Starting daemon: {$this->_name}");
 
         $time = microtime(true);
         $lastWorkerTime = $time;
@@ -327,16 +327,17 @@ class Master extends \Stark\Core\Options {
         while (true) {
             $now = microtime(true);
 
-            if (($now - $lastAdminTime) > self::ADMIN_DATA_INTERVAL_SECONDS) {
-                $this->_acceptConnection($this->_adminSocket, $this->_adminClients);
-                $this->_checkAdminCommands();
+            $this->_acceptConnection($this->_adminSocket, $this->_adminClients);
+            $this->_acceptConnection($this->_socket, $this->_workerClients);
 
+            if (($now - $lastAdminTime) > self::ADMIN_DATA_INTERVAL_SECONDS) {
+                //$this->_processAdminCommands();
                 $lastAdminTime = $now;
             }
 
-            $this->_acceptConnection($this->_daemonSocket, $this->_workerClients);
+            $this->_processAdminCommands();
 
-            if (($now - $lastWorkerTime) > $this->_heartbeat) {
+            if (($now - $lastWorkerTime) > self::HEARTBEAT) {
                 $this->_sendHeartbeatToWorkers();
                 $this->_checkWorkerStatus();
 
@@ -352,18 +353,28 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _acceptConnection($socket, &$clients) {
-        $newClient = @socket_accept($socket);
-
-        if ($newClient) {
-            socket_set_nonblock($newClient);
-            socket_getsockname($newClient, $ip, $port);
-            $clients[] = array(
-                'client' => $newClient,
-                'ip' => $ip,
-                'port' => $port,
-                'index' => -1,
-            );
+        $client = @socket_accept($socket);
+        if ($client === false) {
+            return;
         }
+
+        if ($client == false) {
+            $socketError = socket_last_error($socket);
+            $this->_log->error("Client connect failed, socket:{$socket}, error:{$socketError}");
+            return;
+        }
+
+        socket_set_nonblock($client);
+        socket_getsockname($client, $ip, $port);
+
+        $clients[(int)$client] = array(
+            'client' => $client,
+            'ip' => $ip,
+            'port' => $port,
+            'index' => -1,
+        );
+
+        $this->_log->info("Client connected, {$client}, clients: " . count($clients));
     }
 
     private function _sendHeartbeatToWorkers() {
@@ -371,7 +382,7 @@ class Master extends \Stark\Core\Options {
             $client = $clientInfo['client'];
 
             if ($this->_sendCommandToWorker($client, 'status') === false) {
-                $this->_log->addError("Worker [{$key}] client [{$client}] is not reachable");
+                $this->_log->error("No.{$key} worker is not reachable");
                 unset($this->_workerClients[$key]);
                 continue;
             }
@@ -380,18 +391,22 @@ class Master extends \Stark\Core\Options {
 
     private function _checkWorkerStatus() {
         $this->_missingWorkers = array();
-        
-        foreach ($this->_workerStatuses as $index => $worker) {
-            $processor = new \Stark\Model\Processor($worker->pid);
+
+        /** @var Status $status */
+
+        foreach ($this->_workerStatuses as $index => $status) {
+            $pid = $status->getPid();
+
+            $processor = new Processor($pid);
 
             if ($processor->ppid != $this->_pid) {
-                $this->_log->addError("Worker {$index}[{$worker->pid}] is gone");
+                $this->_log->error("No.{$index} worker has gone, pid:{$pid}.");
                 $this->_missingWorkers[] = $index;
                 continue;
             }
 
             if ($processor->state == 'Z') {
-                $this->_log->addError("Worker {$index}[{$worker->pid}] is zombie processor");
+                $this->_log->error("No.{$index} worker is a zombie processor, pid:{$pid}.");
                 $this->_missingWorkers[] = $index;
                 $processor->quit();
                 continue;
@@ -399,14 +414,14 @@ class Master extends \Stark\Core\Options {
         }
     }
 
-    private function _checkAdminCommands() {
+    private function _processAdminCommands() {
         $offlineClients = array();
 
         foreach ($this->_adminClients as $key => $clientInfo) {
             $client = $clientInfo['client'];
-            $responseValue = Protocol::read($client);
+            $request = Protocol::read($client);
 
-            if (empty($responseValue)) {
+            if (empty($request)) {
                 if (is_resource($client)) {
                     $errorCode = socket_last_error($client);
                     
@@ -417,7 +432,8 @@ class Master extends \Stark\Core\Options {
                     $offlineClients[] = $key;
                 }
             } else {
-                $this->_responseCommand($client, $responseValue, self::COMMAND_FROM_ADMIN);
+                $this->_log->info("Admin request", $request);
+                $this->_responseCommand($client, $request, self::COMMAND_FROM_ADMIN);
             }
         }
         
@@ -433,9 +449,10 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _sendCommandToWorker($client, $command, $arguments = array()) {
-        $write = Protocol::write($client, $command, $arguments);
-        
-        if ($write === false) return false;
+        $length = Protocol::write($client, $command, $arguments);
+        if ($length === false) {
+            return false;
+        }
 
         $responseValue = Protocol::read($client, false);
         if (empty($responseValue) === false) {
@@ -445,12 +462,12 @@ class Master extends \Stark\Core\Options {
         return true;
     }
 
-    private function _responseCommand($client, $responseValue, $from = 0) {
-        if (is_array($responseValue)) {
-            $command = array_shift($responseValue);
-            $arguments = $responseValue;
+    private function _responseCommand($client, $request, $from = 0) {
+        if (is_array($request)) {
+            $command = array_shift($request);
+            $arguments = $request;
         } else {
-            $command = $responseValue;
+            $command = $request;
             $arguments = array();
         }
 
@@ -471,19 +488,17 @@ class Master extends \Stark\Core\Options {
 
         if (method_exists($this, $commandHandle)) {
             return call_user_func_array(array($this, $commandHandle), array($client, $arguments, $from));
-        } else {
-            if ($from == self::COMMAND_FROM_ADMIN) {
-                Protocol::sendError($client, "ERR unknown command '{$command}'");
-            }
-
-            return false;
         }
+
+        if ($from == self::COMMAND_FROM_ADMIN) {
+            Protocol::sendError($client, "ERR unknown command '{$command}'");
+        }
+        return false;
     }
 
     private function _restartWorkerHandler($client, $arguments = array()) {
-        $this->_log->addInfo("Restarting worker {$arguments[self::WORKER_PAYLOAD_INDEX]}");
-
         $workerIndex = $arguments[self::WORKER_PAYLOAD_INDEX];
+        $this->_log->info("No.{$workerIndex} worker is restarting.");
 
         foreach ($this->_workerClients as $key => $clientInfo) {
             if ($clientInfo['index'] == $workerIndex) {
@@ -497,8 +512,8 @@ class Master extends \Stark\Core\Options {
 
     private function _statusWorkerHandler($client, $arguments = array()) {
         $workerIndex = $arguments[self::WORKER_PAYLOAD_INDEX];
-        $data = json_decode($arguments[self::WORKER_PAYLOAD_DATA], true);
-        $this->_workerStatuses[$workerIndex]->update($data);
+        $status = unserialize($arguments[self::WORKER_PAYLOAD_DATA]);
+        $this->_workerStatuses[$workerIndex] = $status;
 
         foreach ($this->_workerClients as $key => &$clientInfo) {
             if ($clientInfo['client'] == $client) {
@@ -511,106 +526,131 @@ class Master extends \Stark\Core\Options {
     }
 
     private function _shutdownAdminHandler($client, $arguments = array(), $from = 0, $commandId = 0) {
-        $this->_log->addInfo('Received command: shutdown');
         $this->_sendResponseToManager($client, 'OK');
         $this->_quit();
-
         return true;
     }
 
     private function _quitAdminHandler($client, $arguments = array(), $from = 0, $commandId = 0) {
         $this->_sendResponseToManager($client, 'OK');
-
         usleep(100000);
         socket_close($client);
         return true;
     }
 
     private function _infoAdminHandler($client, $arguments = array(), $from = 0, $commandId = 0) {
-        $status = $this->_getStatus(true);
-        return $this->_sendResponseToManager($client, $status);
+        $totalCount = 0;
+        $totalSeconds = 0;
+        $totalMemory = 0;
+        $totalWorkerCount = 0;
+
+        /** @var Status $status */
+        foreach ($this->_workerStatuses as $index => $status) {
+            $totalCount += $status->getAllCount();
+            $totalSeconds += $status->getAllSeconds();
+            $totalMemory += $status->getRoundMemoryUsed();
+            $totalWorkerCount += $status->getRounds();
+        }
+
+        $totalMemoryHuman = Unit::humanizeBytes($totalMemory);
+        $totalQPS = $totalSeconds ? $totalCount / $totalSeconds : 0;
+        $totalQPS = round($totalQPS, 2);
+
+        $startedAt = date('Y-m-d H:i:s', $this->_startTime);
+        $uptimeSeconds = floor(time() - $this->_startTime);
+        $uptimeHuman = Unit::humanizeSeconds($uptimeSeconds);
+        $version = '2.0.1';
+
+        $output = <<<STATUS
+# Master
+name:{$this->_name}
+version:{$version}
+started_at:{$startedAt}
+uptime_in_seconds:{$uptimeSeconds}
+uptime_human:{$uptimeHuman}
+
+# Memory
+used_memory:{$totalMemory}
+used_memory_human:{$totalMemoryHuman}
+
+# Worker
+worker_max:{$this->_workerCount}
+worker_total:{$totalWorkerCount}
+
+# Stats
+run_count:{$totalCount}
+run_qps:{$totalQPS}
+
+STATUS;
+
+        return $this->_sendResponseToManager($client, $output);
     }
 
     private function _sendResponseToManager($client, $response) {
         if (is_array($response)) {
-            Protocol::sendMultiBulk($client, $response);
+            $length = Protocol::sendMultiBulk($client, $response);
+            $this->_log->info("Admin response, sent: {$length}", $response);
         } else {
-            Protocol::sendBulk($client, $response);
+            $length = Protocol::sendBulk($client, $response);
+            $this->_log->info("Admin response, sent: {$length}, response: {$response}");
         }
 
         return true;
     }
 
-    private function _getStatus($string = false) {
-        $totalCount = 0;
-        $totalTime = 0.0;
-        $totalQPS = 0.0;
-        $totalMemory = 0;
-                                
-        foreach ($this->_workerStatuses as $childInfo) {
-            $totalCount += $childInfo->totalCount;
-            $totalTime += $childInfo->totalTime;
-            $totalMemory += $childInfo->memory;
-        }
-        
-        $totalQPS = $totalTime ? $totalCount / $totalTime : 0;
-        
-        $status = array(
-            'host' => $this->_host,
-            'port' => $this->_port,
-            'daemon_name' => $this->_name,
-            'start_time' => date('Y-m-d H:i:s', floor($this->_startTime)),
-            'max_worker' => $this->_maxWorkerCount,
-            'total_count' => $totalCount,
-            'total_time' => $totalTime,
-            'total_qps' => $totalQPS,
-            'total_memory' => $totalMemory,
-            'total_worker_client' => count($this->_workerClients),
-            'total_manage_client' => count($this->_adminClients),
-        );
-
-        if ($string) {
-            $output = "";
-
-            foreach ($status as $key => $value) {
-                $output .= "{$key}:{$value}\r\n";
-            }
-
-            return $output;
-        }
-
-        return $status;
+    /**
+     * @param Worker $worker
+     */
+    public function setWorker($worker) {
+        $this->_worker = $worker;
     }
 
-    protected function _setMasterOptions($options) {
-        return $this->setOptions($options);
+    /**
+     * @param string $name
+     */
+    public function setName($name) {
+        $this->_name = $name;
     }
 
-    protected function _setQueueOptions($options) {
-        return $this->_setClassOptionsByType($options, 'Queue');
+    /**
+     * @param string $host
+     */
+    public function setHost($host) {
+        $this->_host = $host;
     }
 
-    protected function _setConsumerOptions($options) {
-        return $this->_setClassOptionsByType($options, 'Consumer');
+    /**
+     * @param string $port
+     */
+    public function setPort($port) {
+        $this->_port = $port;
     }
 
-    private function _setClassOptionsByType($options, $type) {
-        if (empty($options['class'])) {
-            return false;
-        }
+    /**
+     * @param string $workingDirectory
+     */
+    public function setWorkingDirectory($workingDirectory) {
+        $this->_workingDirectory = $workingDirectory;
+    }
 
-        $className = $options['class'];        
-        if ($className[0] != '\\') {
-            $className = "\\Stark\\Daemon\\{$type}\\{$className}";
-        }
+    /**
+     * @param int $workerCount
+     */
+    public function setWorkerCount($workerCount) {
+        $this->_workerCount = $workerCount;
+    }
 
-        if (class_exists($className) == false) {
-            return false;
-        }
-        
-        $property = '_' . lcfirst($type);
-        $this->$property = new $className(isset($options['options']) ? $options['options'] : array());
+    /**
+     * @param string $memoryLimit
+     */
+    public function setMemoryLimit($memoryLimit) {
+        $this->_memoryLimit = $memoryLimit;
+    }
 
-        return true;
+    /**
+     * @param int $logLevel
+     */
+    public function setLogLevel($logLevel) {
+        $this->_logLevel = $logLevel;
     }
 }

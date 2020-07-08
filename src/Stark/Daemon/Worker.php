@@ -1,19 +1,13 @@
 <?php
 namespace Stark\Daemon;
 
+use Monolog\Logger;
+use Stark\Model\Processor;
+use Stark\Model\Status;
+use Stark\Utils\Unit;
+
 class Worker {
-    private $_totalCount = 0;
-    private $_totalTime = 0;
-    private $_totalQPS = 0;
-
-    private $_workerStartTime = 0;
-    private $_queueStartTime = 0;
-    private $_currentCount = 0;
-    private $_currentRunTime = 0;
-    private $_currentQPS = 0;
     private $_masterLastActiveTime = 0;
-    private $_lastActiveTime = 0;
-
     private $_daemonSocket;
     private $_pause = false;
     private $_run = true;
@@ -22,87 +16,124 @@ class Worker {
 
     private $_memoryMaxBytes = 0;
 
+    /**
+     * @var Status
+     */
+    private $_status = null;
+    private $_statusFile = "";
+
     //主进程过来的参数
     public $index;
-    public $log;
-    public $daemonSocketFile;
+    public $name;
+    public $dataDir;
+    public $sockFile;
     public $pid;
-    public $masterPid;    
+    public $masterPid;
+
+    /**
+     * @var Logger
+     */
+    public $log;
 
     //配置参数
-    public $maxRunSeconds = 0;
-    public $maxRunCount = 0;
-    public $maxIdleSeconds = 60;
-    public $emptySleepSeconds = 0.1;
-    public $heartbeat = 2.0;
-    public $consumer = null;
-    public $queue = null;
+    private $_maxRunSeconds = 3600;
+    private $_maxRunCount = 10000;
+    private $_maxIdleSeconds = 60;
+    private $_emptySleepSeconds = 0.1;
+    private $_heartbeat = 5.0;
 
-    //系统参数
-    public $config = array();
-    
+    /**
+     * @var IConsumer
+     */
+    private $_consumer = null;
+
+    /**
+     * @var IProducer
+     */
+    private $_producer = null;
+
     public function start() {
+        $this->_reloadStatus();
+
         $this->_initialize();
-        $this->_startLoop();
+        $this->_loop();
         $this->_finalize();
 
+        $this->_storeStatus();
         exit;
     }
 
     private function _initialize() {
         $this->_setupSignal();
 
-        if ($this->queue) {
-            $this->queue->init($this);
+        if ($this->_producer == null && $this->_consumer == null) {
+            exit;
         }
 
-        $this->consumer->init($this);
-        
-        $this->_connectMasterSocket();
-        
-        $this->_workerStartTime = microtime(true);
-        $this->_lastActiveTime = $this->_workerStartTime;
-        $this->_currentCount = 0;
-        $this->_currentRunTime = 0;
-        $this->_currentQPS = 0;
-        $this->_masterLastActiveTime = 0;
-        $this->_memoryMaxBytes = \Stark\Core\System::getSizeBytes(ini_get('memory_limit')) * 0.8;
+        if ($this->_producer != null) {
+            $this->_producer->initialize($this);
+        }
 
+        if ($this->_consumer != null) {
+            $this->_consumer->initialize($this);
+        }
+
+        $this->_connectMasterSocket();
+
+        $this->_memoryMaxBytes = Unit::stringToBytes(ini_get('memory_limit')) * 0.8;
         $this->_started = true;
-        $this->log->addInfo("Worker {$this->index} is started");
+        $this->log->info("No.{$this->index} worker started");
     }
 
-    private function _startLoop() {
-        while ($this->_run) {
-            $this->_queueStartTime = microtime(true);
+    private function _loop() {
+        $this->_status->newRound();
 
-            if ($this->_checkStatus() == false) {
+        while ($this->_run) {
+            $health = $this->_getHealth();
+            if ($health['code'] != 0) {
+                $this->_stop($health['message']);
                 break;
             }
 
             $this->_receiveCommands();
 
             if ($this->_pause) {
-                usleep($this->emptySleepSeconds * 1000 * 1000);
+                $this->_status->runStart(); // 暂停时忽略idle
+                usleep($this->_emptySleepSeconds * 1000 * 1000);
                 continue;
             }
 
             if ($this->_doQueue() === false) {
-                usleep($this->emptySleepSeconds * 1000 * 1000);
+                usleep($this->_emptySleepSeconds * 1000 * 1000);
             }
         }
+    }
+
+    private function _doQueue() {
+        $data = null;
+        if ($this->_producer) {
+            $data = $this->_producer->produce($this);
+        }
+
+        $this->_status->runStart();
+        $result = $this->_consumer->consume($this, $data);
+        $this->_status->runFinished($result);
+
+        return $result;
     }
 
     private function _finalize() {
         @socket_close($this->_daemonSocket);
 
-        if ($this->queue) {
-            $this->queue->complete($this);
+        if ($this->_producer != null) {
+            $this->_producer->finalize($this);
         }
-        
-        $this->consumer->complete($this);
 
-        $this->log->addInfo("Worker {$this->index} is completed");
+        if ($this->_consumer != null) {
+            $this->_consumer->finalize($this);
+        }
+
+        $this->log->info("No.{$this->index} worker completed");
     }
 
     private function _setupSignal() {
@@ -113,97 +144,65 @@ class Worker {
         pcntl_signal(SIGTERM, array($this, '_quit'));
         pcntl_signal(SIGHUP, array($this, '_quit'));
     }
-      
-    private function _checkStatus() {
-        $reason = $this->_checkHealth();
 
-        if ($reason !== true) {
-            $this->_restart($reason);
-            return false;
-        }
-        
-        return true;
-    }
-    
-    private function _checkHealth() {
-        $runTime = $this->_queueStartTime - $this->_workerStartTime;
-        if ($this->maxRunSeconds > 0 && $runTime > $this->maxRunSeconds) {
-            return "Run time limit [{$runTime}] reached";
+    private function _getHealth() {
+        //TODO: 定义消息码和消息
+        $currentRunSeconds = $this->_status->getCurrentSeconds();
+        if ($this->_maxRunSeconds > 0 && $currentRunSeconds > $this->_maxRunSeconds) {
+            return ['code' => 1, 'message' => "Run time limit [{$currentRunSeconds}] reached"];
         }
 
-        if ($this->maxRunCount > 0 && $this->_currentCount >= $this->maxRunCount) {
-            return "Queue limit [{$this->_currentCount}] reached";
+        $currentRunCount = $this->_status->getRoundCount();
+        if ($this->_maxRunCount > 0 && $currentRunCount >= $this->_maxRunCount) {
+            return ['code' => 1, 'message' => "Queue limit [{$currentRunCount}] reached"];
         }
 
-        $idelTime = $this->_queueStartTime - $this->_lastActiveTime;
-        if ($this->maxIdleSeconds > 0 && $idelTime > $this->maxIdleSeconds) {
-            return "Idel time limit [{$idelTime}] reached";
+        $idleSeconds = $this->_status->getIdleSeconds();
+        if ($this->_maxIdleSeconds > 0 && $idleSeconds > $this->_maxIdleSeconds) {
+            return ['code' => 1, 'message' => "Idle limit [{$idleSeconds}] reached"];
         }
 
-        if ($this->heartbeat > 0 && $this->_masterLastActiveTime > 0 && ($this->_queueStartTime - $this->_masterLastActiveTime) > $this->heartbeat) {
-            $processor = new \Stark\Model\Processor($this->masterPid);
-        
-            if ($processor->pid == false) {
-                //TODO: pid+name
-                return "Master processor [{$this->masterPid}] has gone";
+        if ($this->_heartbeat > 0 && (time() - $this->_masterLastActiveTime) > $this->_heartbeat) {
+            $processor = new Processor($this->masterPid);
+            if (!$processor->isAlive()) {
+                return ['code' => 1, 'message' => "Master processor [{$this->masterPid}] has gone"];
             }
         }
 
         $memoryUsage = memory_get_usage();
         if ($this->_memoryMaxBytes > 0 && $memoryUsage > $this->_memoryMaxBytes) {
-            return 'Memory limit [$memoryUsage] will reached';
+            return ['code' => 1, 'message' => "Memory limit [$memoryUsage] will reached"];
         }
 
-        return true;
+        return ['code' => 0, 'message' => 'healthy'];
     }
 
-    private function _restart($reason = false) {
-        if ($reason != false) {
-            $this->log->addInfo("No.{$this->index} worker restart: {$reason}");
+    private function _stop($message) {
+        $this->log->info("No.{$this->index} worker, {$message}");
+        $this->_sendResponse('restart', $message);
+        $this->_quit();
+    }
+
+    private function _storeStatus() {
+        if (!file_put_contents($this->_statusFile, serialize($this->_status))) {
+            $this->log->error("No.{$this->index} worker status save failed, file:{$this->_statusFile}.");
+        }
+    }
+
+    private function _reloadStatus() {
+        $this->_statusFile = "{$this->dataDir}/{$this->name}-{$this->index}.status";
+        if (file_exists($this->_statusFile)) {
+            $content = file_get_contents($this->_statusFile);
+            $this->_status = unserialize($content);
+        } else {
+            $this->_status = new Status();
         }
 
-        $this->_sendResponse('restart', $reason);
-        $this->_statusCommandHandle(); //TODO: 汇报失败时从文件恢复状态
-        $this->_quit();
+        $this->_status->setPid($this->pid);
     }
 
     private function _quit() {
         $this->_run = false;
-    }
-    
-    private function _getStatus() {
-        return array(
-            'lastActiveTime' => $this->_lastActiveTime,
-            'totalCount' => $this->_totalCount,
-            'totalTime' => $this->_totalTime,
-            'totalQPS' => $this->_totalQPS,
-            'memory' => memory_get_peak_usage(true),
-        );
-    }
-    
-    private function _doQueue() {
-        $queueBeginTime = microtime(true);
-        $data = null;
-
-        if ($this->queue) {
-            $data = $this->queue->pop($this);
-            if ($data === false) {
-                return false;
-            }
-        }
-
-        $runResult = $this->consumer->run($this, $data);
-
-        $queueEndTime = microtime(true);
-        $this->_lastActiveTime = $queueBeginTime;
-        $this->_currentCount++;
-        $this->_currentRunTime += $queueEndTime - $queueBeginTime;
-        $this->_currentQPS = $this->_currentCount / $this->_currentRunTime;
-        $this->_totalCount++;
-        $this->_totalTime += $queueEndTime - $queueBeginTime;
-        $this->_totalQPS = $this->_totalCount / $this->_totalTime;
-        
-        return $runResult;
     }
 
     private function _connectMasterSocket() {
@@ -214,28 +213,28 @@ class Worker {
         $this->_daemonSocket = socket_create(AF_UNIX, SOCK_STREAM, 0);
         
         if (!$this->_daemonSocket) {
-            $this->_exit('Unable to create daemon socket'); 
+            $this->_exit("No.{$this->index} worker unable to create daemon socket");
         }
 
-        if (!@socket_connect($this->_daemonSocket, $this->daemonSocketFile)) {
-            $this->_exit('Unable to connect daemon socket');
+        if (!@socket_connect($this->_daemonSocket, $this->sockFile)) {
+            $this->_exit("No.{$this->index} worker unable to connect daemon socket");
         }
 
         if (!socket_set_nonblock($this->_daemonSocket)) {
-            $this->_exit("Unable to set daemon socket option");
+            $this->_exit("No.{$this->index} worker unable to set daemon socket option");
         }
 
         socket_getsockname($this->_daemonSocket, $ip, $this->_socketPort);
     }
 
     private function _exit($message) {
-        $this->log->addInfo($message);
+        $this->log->info($message);
         
         if ($this->_started) {
             $this->_finalize();
         }
 
-        exit("{$message}\r\n");
+        exit();
     }
 
     private function _updateMasterActiveTime() {
@@ -267,37 +266,31 @@ class Worker {
     }
 
     private function _quitCommandHandle($arguments = array()) {
-        $this->_restart("Worker {$this->index} received command: quit");
+        $this->_stop("Received command: quit");
         return true;
     }
 
     private function _restartCommandHandle($arguments = array()) {
-        $this->_restart("Worker {$this->index} received command: restart");
+        $this->_stop("Received command: restart");
         return true;
     }
 
     private function _pauseCommandHandle($arguments = array()) {
-        if ($this->_pause) {
-            $this->log->addInfo("Worker {$this->index} received command: pause");
-            $this->_pause = true;
-        }
-
+        $this->log->info("No.{$this->index} worker received command: pause");
+        $this->_pause = true;
         return true;
     }
 
     private function _resumeCommandHandle($arguments = array()) {
-        if ($this->_pause) {
-            $this->log->addInfo("Worker {$this->index} received command: resume");
-            $this->_pause = false;
-        }
-
+        $this->log->info("No.{$this->index} worker received command: resume");
+        $this->_pause = false;
         return true;
     }
 
     private function _statusCommandHandle($arguments = array()) {
         $this->_updateMasterActiveTime();
-        $status = $this->_getStatus();
-        return $this->_sendResponse('status', json_encode($status));
+        $this->_status->setRoundMemoryUsed(memory_get_peak_usage(true));
+        return $this->_sendResponse('status', serialize($this->_status));
     }
 
     private function _sendResponse($command, $response = '') {
@@ -308,11 +301,67 @@ class Worker {
             $errorCode = socket_last_error($this->_daemonSocket);
             
             if ($errorCode === SOCKET_EPIPE || $errorCode === SOCKET_EAGAIN) {
-                $this->log->addInfo("Worker {$this->index} socket error, reconnecting");
+                $this->log->info("No.{$this->index} worker socket error, reconnecting");
                 $this->_connectMasterSocket();                    
             }
         }
 
         return $result;
+    }
+
+    /**
+     * @param int $maxRunSeconds
+     */
+    public function setMaxRunSeconds($maxRunSeconds) {
+        $this->_maxRunSeconds = $maxRunSeconds;
+    }
+
+    /**
+     * @param int $maxRunCount
+     */
+    public function setMaxRunCount($maxRunCount) {
+        $this->_maxRunCount = $maxRunCount;
+    }
+
+    /**
+     * @param int $maxIdleSeconds
+     */
+    public function setMaxIdleSeconds($maxIdleSeconds) {
+        $this->_maxIdleSeconds = $maxIdleSeconds;
+    }
+
+    /**
+     * @param float $emptySleepSeconds
+     */
+    public function setEmptySleepSeconds($emptySleepSeconds) {
+        $this->_emptySleepSeconds = $emptySleepSeconds;
+    }
+
+    /**
+     * @param float $heartbeat
+     */
+    public function setHeartbeat($heartbeat) {
+        $this->_heartbeat = $heartbeat;
+    }
+
+    /**
+     * @param IConsumer $consumer
+     */
+    public function setConsumer($consumer) {
+        $this->_consumer = $consumer;
+    }
+
+    /**
+     * @param IProducer $producer
+     */
+    public function setProducer($producer) {
+        $this->_producer = $producer;
+    }
+
+    /**
+     * @return Status
+     */
+    public function getStatus() {
+        return $this->_status;
     }
 }

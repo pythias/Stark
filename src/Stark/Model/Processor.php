@@ -1,6 +1,8 @@
 <?php
 namespace Stark\Model;
 
+use Stark\Core\System;
+
 class Processor {
     public $pid;
     public $ppid;
@@ -13,15 +15,15 @@ class Processor {
     public function __construct($pid) {
         $pid = intval($pid);
         
-        if (\Stark\Core\System::isLinux() && file_exists("/proc/{$pid}")) {
+        if (System::isLinux() && file_exists("/proc/{$pid}")) {
             $this->pid = $pid;
         }
 
-        if (function_exists('shell_exec') == false) {
+        if (!function_exists('shell_exec')) {
             return;
         }
 
-        $ps = trim(shell_exec("ps -eo pid,ppid,pcpu,pmem,time,state,args |grep '^[ ]*{$pid}'"));
+        $ps = trim(shell_exec("ps -eo pid,ppid,pcpu,pmem,time,state,args |grep '^[ ]*{$pid} '"));
         $info = preg_split('/\s+/', $ps);
         if (count($info) < 7) {
             return;
@@ -34,6 +36,11 @@ class Processor {
         $this->time = $info[4];
         $this->state = $info[5];
         $this->args = implode(' ', array_slice($info, 6));
+    }
+
+    public function isAlive() {
+        //TODO
+        return $this->pid && $this->state != 'Z';
     }
 
     public function quit($isChild = true) {

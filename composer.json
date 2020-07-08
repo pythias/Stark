@@ -5,12 +5,14 @@
     "homepage": "https://github.com/pythias/Stark",
     "type": "library",
     "license": "MIT",
+    "version": "2.0.1",
     "require": {
         "php": ">=5.4",
-        "monolog/monolog": "*",
+        "monolog/monolog": "^2.1",
         "ext-pcntl": "*",
         "ext-posix": "*",
-        "ext-sockets": "*"
+        "ext-sockets": "*",
+        "ext-redis": "*"
     },
     "autoload": {
         "psr-4": {"Stark\\": "src/Stark"}
@@ -18,7 +20,7 @@
     "bin": ["bin/stark"],
     "authors": [
         {
-            "name" : "Chenjie",
+            "name" : "pythias",
             "email": "pythias@gmail.com"
         }
     ]

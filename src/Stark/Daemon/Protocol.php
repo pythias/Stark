@@ -8,9 +8,9 @@ class Protocol {
 
     /**
      * 解析指令
-     * @param  string $command   指令字符串
-     * @param  [type] $arguments [description]
-     * @return [type]            [description]
+     * @param string $command 指令字符串
+     * @param $arguments
+     * @return bool|string
      */
     public static function parseCommand($command, $arguments) {
         if (is_array($arguments) == false) {
@@ -24,10 +24,10 @@ class Protocol {
     /**
      * 往socket resource写入指令
      *     如 write($h, 'set', array('key', 'value'))
-     * @param  resouce $handle    socket或者file handle
-     * @param  string  $command   指令名称
-     * @param  array   $arguments 指令参数数组
-     * @return [type]             [description]
+     * @param int $handle socket或者file handle
+     * @param string $command 指令名称
+     * @param array $arguments 指令参数数组
+     * @return bool|int
      */
     public static function write($handle = 0, $command = '', $arguments = array()) {
         $buffer = self::parseCommand($command, $arguments);
@@ -37,12 +37,12 @@ class Protocol {
     /**
      * 往socket resource写入指令并读取指令的响应
      *     如 writeAndRead($h, 'set', array('key', 'value'))
-     * @param  resouce $handle    socket或者file handle
-     * @param  string  $command   指令名称
-     * @param  array   $arguments 指令参数数组
-     * @return [type]             [description]
+     * @param resource $handle socket或者file handle
+     * @param string $command 指令名称
+     * @param array $arguments 指令参数数组
+     * @return array|bool|int|string|null
      */
-    public static function writeAndRead($handle = 0, $command = '', $arguments = array()) {
+    public static function writeAndRead($handle, $command = '', $arguments = array()) {
         $buffer = self::parseCommand($command, $arguments);
         self::_writeToServer($handle, $buffer);
         return self::read($handle);
@@ -50,20 +50,20 @@ class Protocol {
 
     /**
      * 读取响应
-     * @param  resource  $handle socket或者file handle
-     * @param  boolean   $bulk   是否为bulk message，默认为false
-     * @return string/integer/float/array 返回值
+     * @param resource $handle socket或者file handle
+     * @param boolean $bulk 是否为bulk message，默认为false
+     * @return string|integer|float|array
      */
-    public static function read($handle = 0, $bulk = false) {
+    public static function read($handle, $bulk = false) {
         $chunk = self::_readLineFromServer($handle);
         return self::parseResponse($chunk, $handle);
     }
 
     /**
      * 发送一行内容
-     * @param  resouce $handle 连接fd
-     * @param  string  $line    内容
-     * @return [type]         [description]
+     * @param resouce $handle 连接fd
+     * @param string $line 内容
+     * @return bool|int
      */
     public static function sendLine($handle, $line) {
         $buffer = self::_parseLine($line);
@@ -72,9 +72,9 @@ class Protocol {
 
     /**
      * 发送内容块
-     * @param  resource $handle 连接fd
-     * @param  string   $bulk   内容块字符串
-     * @return [type]         [description]
+     * @param resource $handle 连接fd
+     * @param string $bulk 内容块字符串
+     * @return bool|int
      */
     public static function sendBulk($handle, $bulk) {
         $buffer = self::_parseBulk($bulk);
@@ -83,9 +83,9 @@ class Protocol {
 
     /**
      * 发送多块内容
-     * @param  resource $handle    连接fd
-     * @param  array    $multiBulk 内容块数组
-     * @return [type]            [description]
+     * @param resource $handle 连接fd
+     * @param array $multiBulk 内容块数组
+     * @return bool|int
      */
     public static function sendMultiBulk($handle, $multiBulk) {
         $buffer = self::_parseMultiBulk($multiBulk);
@@ -94,9 +94,9 @@ class Protocol {
 
     /**
      * 发送数字
-     * @param  resource $handle  连接fd
-     * @param  integer  $integer 数值
-     * @return [type]          [description]
+     * @param resource $handle 连接fd
+     * @param integer $integer 数值
+     * @return bool|int
      */
     public static function sendInteger($handle, $integer) {
         $buffer = self::_parseInteger($integer);
@@ -105,9 +105,9 @@ class Protocol {
 
     /**
      * 发送错误
-     * @param  resource $handle       连接fd
-     * @param  string   $errorMessage 错误内容
-     * @return [type]               [description]
+     * @param resource $handle 连接fd
+     * @param string $errorMessage 错误内容
+     * @return bool|int
      */
     public static function sendError($handle, $errorMessage) {
         $buffer = self::_parseError($errorMessage);
@@ -116,9 +116,9 @@ class Protocol {
 
     /**
      * 解析指令返回值
-     * @param  string  $chunk  指令返回值
-     * @param  resouce $handle socket或者file handle
-     * @return [type]          [description]
+     * @param string $chunk 指令返回值
+     * @param resource $handle socket或者file handle
+     * @return array|bool|false|int|string|null
      */
     public static function parseResponse($chunk, $handle) {
         if ($chunk === false || $chunk === '') {
@@ -152,13 +152,13 @@ class Protocol {
                 $count = intval($payload);
                 if ($count === -1) return null;
 
-                $multibulk = array();
+                $multiBulk = array();
 
                 for ($i = 0; $i < $count; $i++) {
-                    $multibulk[$i] = self::read($handle, true);
+                    $multiBulk[$i] = self::read($handle, true);
                 }
 
-                return $multibulk;
+                return $multiBulk;
 
             case ':':    // integer
                 return (int) $payload;
@@ -330,7 +330,7 @@ class Protocol {
                 return $buffer;
             }
 
-            if ($char === "\n" && $lastChar == "\r") {
+            if ($char === "\n" && $lastChar === "\r") {
                 return $buffer;
             }
 
