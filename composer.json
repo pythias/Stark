@@ -5,10 +5,10 @@
     "homepage": "https://github.com/pythias/Stark",
     "type": "library",
     "license": "MIT",
-    "version": "2.0.1",
+    "version": "2.1.0",
     "require": {
-        "php": ">=5.4",
-        "monolog/monolog": "^1.25",
+        "php": ">=7.2",
+        "monolog/monolog": "^2.1",
         "ext-pcntl": "*",
         "ext-posix": "*",
         "ext-sockets": "*",
